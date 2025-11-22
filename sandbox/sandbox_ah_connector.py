@@ -1,34 +1,34 @@
 """
-Sandbox script for testing Jumbo connector using Apify actor.
+Sandbox script for testing AH connector using Apify actor.
 
-This script tests the JumboConnector which uses Apify's harvestedge/jumbo-supermarket-scraper
-to search for Jumbo products.
+This script tests the AHConnector which uses Apify's harvestedge/my-actor
+scraper to search for Albert Heijn products.
 
 Prerequisites:
 - APIFY_TOKEN must be set in .env file at project root
 - apify-client must be installed (pip install apify-client)
 
 Run:
-    python -m sandbox.sandbox_jumbo
+    python -m sandbox.sandbox_ah_connector
 """
 
 from pprint import pprint
 
-from aggregator.connectors.jumbo_connector import JumboConnector
+from aggregator.connectors.ah_connector import AHConnector
 
 
-def test_jumbo() -> None:
-    """Test Jumbo connector with a simple search query."""
+def main():
+    """Test AH connector with a simple search query."""
     try:
-        print("Initializing Jumbo connector with Apify...")
-        connector = JumboConnector()
-        print("Jumbo connector initialized successfully ✅\n")
+        print("Initializing AH connector with Apify...")
+        connector = AHConnector()
+        print("AH connector initialized successfully ✅\n")
         
         query = "melk"
         print(f"Searching for '{query}' (size=5, page=0)...")
         results = connector.search_products(query, size=5, page=0)
         
-        print(f"\nGot {len(results)} Jumbo results")
+        print(f"\nGot {len(results)} AH results")
         
         if results:
             print("\n=== Product Summary ===")
@@ -47,7 +47,7 @@ def test_jumbo() -> None:
         else:
             print("No results found. Check:")
             print("  - APIFY_TOKEN is set correctly in .env")
-            print("  - The actor harvestedge/jumbo-supermarket-scraper is accessible")
+            print("  - The actor harvestedge/my-actor is accessible")
             print("  - Your Apify account has sufficient credits")
         
         print("\n" + "=" * 80)
@@ -65,4 +65,4 @@ def test_jumbo() -> None:
 
 
 if __name__ == "__main__":
-    test_jumbo()
+    main()

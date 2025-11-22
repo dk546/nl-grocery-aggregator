@@ -1,7 +1,6 @@
 fastapi
 uvicorn[standard]
-python-jumbo-api
-appiepy
+apify-client
 python-picnic-api
 pydantic
 python-dotenv
