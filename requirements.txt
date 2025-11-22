@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+python-jumbo-api
+appiepy
+python-picnic-api
+pydantic
+python-dotenv
+requests
+pytest
