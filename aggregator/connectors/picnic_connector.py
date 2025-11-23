@@ -51,11 +51,23 @@ class PicnicConnector(BaseConnector):
         Raises:
             RuntimeError: If Picnic credentials are missing from .env or provided parameters
         """
-        load_dotenv()
-        username = username or os.getenv("PICNIC_USERNAME")
-        password = password or os.getenv("PICNIC_PASSWORD")
-        country_code = country_code or os.getenv("PICNIC_COUNTRY_CODE", "NL")
-
+        # Check environment variables first
+        if not username:
+            username = os.getenv("PICNIC_USERNAME")
+        if not password:
+            password = os.getenv("PICNIC_PASSWORD")
+        
+        # Only try loading .env if credentials are still missing
+        if not username or not password:
+            load_dotenv(override=False)
+            if not username:
+                username = os.getenv("PICNIC_USERNAME")
+            if not password:
+                password = os.getenv("PICNIC_PASSWORD")
+        
+        if not country_code or country_code == "NL":
+            country_code = os.getenv("PICNIC_COUNTRY_CODE", "NL")
+        
         if not username or not password:
             raise RuntimeError(
                 "Picnic credentials missing. Please add PICNIC_USERNAME and PICNIC_PASSWORD "
@@ -132,7 +144,7 @@ class PicnicConnector(BaseConnector):
             start = page * size
             end = start + size
             return products[start:end]
-            
+
         except Exception as e:
             # Log error and return empty list to prevent breaking the aggregator
             print(f"Error searching Picnic products: {e}")

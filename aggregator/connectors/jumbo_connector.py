@@ -53,9 +53,18 @@ class JumboConnector(BaseConnector):
         Raises:
             RuntimeError: If APIFY_TOKEN is not set or client initialization fails.
         """
-        load_dotenv()
+        # Check if token is provided as parameter first
+        if not apify_token:
+            # Check environment variable (including any values from .env already loaded)
+            token = os.getenv("APIFY_TOKEN")
+            # Only try loading .env if token is not in environment
+            if not token:
+                # Try loading from .env file (this won't override existing env vars)
+                load_dotenv(override=False)
+                token = os.getenv("APIFY_TOKEN")
+        else:
+            token = apify_token
         
-        token = apify_token or os.getenv("APIFY_TOKEN")
         if not token:
             raise RuntimeError(
                 "APIFY_TOKEN is not set. Please add it to your .env file at the project root:\n"

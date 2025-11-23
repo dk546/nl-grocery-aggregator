@@ -19,7 +19,7 @@ Access API documentation at:
     http://localhost:8000/redoc (ReDoc)
 """
 
-from typing import List, Optional, Any
+from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, Header, Query, HTTPException, status
 
@@ -29,7 +29,7 @@ from aggregator.models import CartItem, Cart
 from aggregator.connectors.ah_connector import AHConnector
 from aggregator.connectors.jumbo_connector import JumboConnector
 from aggregator.connectors.picnic_connector import PicnicConnector
-from api.schemas import Product, SearchResponse, CartItemInput, CartViewResponse
+from api.schemas import ProductBase, SearchResponse, CartItemInput, CartView
 
 app = FastAPI(
     title="NL Grocery Aggregator API",
@@ -68,19 +68,19 @@ def get_session(x_session_id: Optional[str] = Header(None, alias="X-Session-ID")
     return x_session_id or "demo-user"
 
 
-def dict_to_product(product_dict: dict) -> Product:
+def dict_to_product(product_dict: Dict[str, Any]) -> ProductBase:
     """
-    Convert a product dictionary from aggregated_search to a Product model.
+    Convert a product dictionary from aggregated_search to a ProductBase model.
     
     Args:
         product_dict: Dictionary containing product data from aggregated_search
         
     Returns:
-        Product model instance
+        ProductBase model instance with all fields including is_cheapest and raw
     """
-    return Product(
-        retailer=product_dict.get("retailer", ""),
+    return ProductBase(
         id=str(product_dict.get("id", "")),
+        retailer=product_dict.get("retailer", ""),
         name=product_dict.get("name", ""),
         price_eur=float(product_dict.get("price_eur", 0.0)),
         unit=product_dict.get("unit"),
@@ -88,6 +88,8 @@ def dict_to_product(product_dict: dict) -> Product:
         image_url=product_dict.get("image_url"),
         url=product_dict.get("url"),
         health_tag=product_dict.get("health_tag", "neutral"),
+        is_cheapest=product_dict.get("is_cheapest"),
+        raw=product_dict.get("raw"),
     )
 
 
@@ -97,7 +99,7 @@ def dict_to_product(product_dict: dict) -> Product:
     tags=["search"],
     summary="Search for products across multiple retailers",
     description="Search for products across Albert Heijn, Jumbo, and Picnic. Results are normalized, "
-                "health-tagged, and sorted by price.",
+                "health-tagged, grouped by name with cheapest marked, and sorted according to sort_by parameter.",
 )
 def search(
     q: str = Query(..., min_length=1, description="Search query string (e.g., 'melk', 'brood')"),
@@ -107,31 +109,41 @@ def search(
     ),
     size: int = Query(10, ge=1, le=50, description="Number of results per retailer (max: 50)"),
     page: int = Query(0, ge=0, description="Page number (0-indexed)"),
+    sort_by: Optional[str] = Query(
+        "price",
+        description="Sort criterion: 'price' (lowest first), 'retailer' (alphabetical), or 'health' (healthy first)"
+    ),
+    health_filter: Optional[str] = Query(
+        None,
+        description="Filter by health tag: 'healthy' or 'unhealthy' (optional)"
+    ),
 ) -> SearchResponse:
     """
     Search for products across multiple retailers.
     
     Searches the specified retailers for products matching the query string,
-    aggregates the results, adds health tags, and returns a merged, sorted list.
+    aggregates the results, adds health tags, filters by health if requested,
+    groups by name to mark cheapest options, and returns a merged, sorted list.
     
     Args:
         q: Search query string (minimum 1 character)
         retailers: Comma-separated list of retailer identifiers (e.g., "ah,jumbo,picnic")
         size: Number of results to return per retailer (1-50)
         page: Page number for pagination (0-indexed)
+        sort_by: Sort criterion - "price", "retailer", or "health" (default: "price")
+        health_filter: Optional filter for health tag - "healthy" or "unhealthy"
         
     Returns:
         SearchResponse containing:
-        - query: The search query that was executed
-        - count: Total number of products found
-        - results: List of Product models, sorted by price
+        - results: List of ProductBase models, sorted and filtered according to parameters
         
     Raises:
         HTTPException 400: If no valid retailers are specified or invalid retailer names provided
+        HTTPException 500: If search fails due to connector errors
         
     Example:
         ```bash
-        GET /search?q=melk&retailers=ah,picnic&size=5
+        GET /search?q=melk&retailers=ah,picnic&size=5&sort_by=price&health_filter=healthy
         ```
     """
     # Parse and validate retailers
@@ -151,19 +163,47 @@ def search(
             detail=f"Invalid retailer(s): {', '.join(invalid_retailers)}. Valid retailers: {', '.join(sorted(VALID_RETAILERS))}"
         )
     
+    # Validate sort_by parameter
+    valid_sort_options = {"price", "retailer", "health"}
+    if sort_by and sort_by.lower() not in valid_sort_options:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid sort_by: '{sort_by}'. Valid options: {', '.join(sorted(valid_sort_options))}"
+        )
+    
+    # Validate health_filter if provided
+    if health_filter:
+        health_filter_lower = health_filter.lower()
+        if health_filter_lower not in ("healthy", "unhealthy"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid health_filter: '{health_filter}'. Valid options: 'healthy', 'unhealthy'"
+            )
+    
     try:
-        # Perform aggregated search
-        results_dicts = aggregated_search(q, retailer_list, size_per_retailer=size, page=page)
+        # Perform aggregated search with all parameters
+        # Note: query and retailers are positional args to match test expectations
+        results_dicts = aggregated_search(
+            q,  # positional: query
+            retailer_list,  # positional: retailers
+            size_per_retailer=size,
+            page=page,
+            sort_by=sort_by or "price",
+            health_filter=health_filter
+        )
         
-        # Convert dictionaries to Product models
+        # Convert dictionaries to ProductBase models
         products = [dict_to_product(p) for p in results_dicts]
         
-        return SearchResponse(
-            query=q,
-            count=len(products),
-            results=products
-        )
+        return SearchResponse(results=products)
+    except RuntimeError as e:
+        # Handle connector errors specifically
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error connecting to retailer services: {str(e)}"
+        ) from e
     except Exception as e:
+        # Handle any other unexpected errors
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error performing search: {str(e)}"
@@ -172,7 +212,7 @@ def search(
 
 @app.post(
     "/cart/add",
-    response_model=Cart,
+    response_model=CartView,
     tags=["cart"],
     summary="Add an item to the shopping cart",
     description="Add a product to the shopping cart for the current session. If the item already "
@@ -181,7 +221,7 @@ def search(
 def add_item(
     item: CartItemInput,
     x_session_id: Optional[str] = Header(None, alias="X-Session-ID", description="Session identifier (defaults to 'demo-user')"),
-) -> Cart:
+) -> CartView:
     """
     Add an item to the shopping cart.
     
@@ -193,7 +233,9 @@ def add_item(
         x_session_id: Session ID from X-Session-ID header (optional, defaults to "demo-user")
         
     Returns:
-        Updated Cart instance with all items
+        CartView containing:
+        - items: List of CartItem objects in the cart
+        - total: Total price of all items in euros
         
     Raises:
         HTTPException 400: If cart item data is invalid or retailer is invalid
@@ -234,7 +276,12 @@ def add_item(
         )
         
         cart = add_to_cart(session, cart_item.model_dump())
-        return cart
+        
+        # Convert Cart to CartView format
+        return CartView(
+            items=list(cart.items.values()),
+            total=cart.total()
+        )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -249,7 +296,7 @@ def add_item(
 
 @app.post(
     "/cart/remove",
-    response_model=Cart,
+    response_model=CartView,
     tags=["cart"],
     summary="Remove an item from the shopping cart",
     description="Remove an item from the cart or reduce its quantity. If the quantity to remove "
@@ -260,7 +307,7 @@ def remove_item(
     product_id: str = Query(..., min_length=1, description="Product identifier"),
     qty: int = Query(1, ge=1, description="Quantity to remove (default: 1)"),
     x_session_id: Optional[str] = Header(None, alias="X-Session-ID", description="Session identifier (defaults to 'demo-user')"),
-) -> Cart:
+) -> CartView:
     """
     Remove an item from the shopping cart or reduce its quantity.
     
@@ -274,10 +321,13 @@ def remove_item(
         x_session_id: Session ID from X-Session-ID header (optional, defaults to "demo-user")
         
     Returns:
-        Updated Cart instance after removal
+        CartView containing:
+        - items: List of CartItem objects remaining in the cart
+        - total: Updated total price of all items in euros
         
     Raises:
         HTTPException 400: If retailer is invalid
+        HTTPException 500: If there's an error removing the item from cart
         
     Example:
         ```bash
@@ -297,7 +347,12 @@ def remove_item(
     
     try:
         cart = remove_from_cart(session, retailer_lower, product_id, qty)
-        return cart
+        
+        # Convert Cart to CartView format
+        return CartView(
+            items=list(cart.items.values()),
+            total=cart.total()
+        )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -307,14 +362,14 @@ def remove_item(
 
 @app.get(
     "/cart/view",
-    response_model=CartViewResponse,
+    response_model=CartView,
     tags=["cart"],
     summary="View the current shopping cart",
     description="Retrieve the contents of the shopping cart for the current session along with the total price.",
 )
 def view_cart(
     x_session_id: Optional[str] = Header(None, alias="X-Session-ID", description="Session identifier (defaults to 'demo-user')"),
-) -> CartViewResponse:
+) -> CartView:
     """
     View the current shopping cart for a session.
     
@@ -324,8 +379,8 @@ def view_cart(
         x_session_id: Session ID from X-Session-ID header (optional, defaults to "demo-user")
         
     Returns:
-        CartViewResponse containing:
-        - cart: Cart instance with all items
+        CartView containing:
+        - items: List of CartItem objects in the cart
         - total: Total price of all items in the cart (in euros)
         
     Raises:
@@ -341,8 +396,10 @@ def view_cart(
     
     try:
         cart = get_cart(session)
-        return CartViewResponse(
-            cart=cart.model_dump(),
+        
+        # Convert Cart to CartView format
+        return CartView(
+            items=list(cart.items.values()),
             total=cart.total()
         )
     except Exception as e:
