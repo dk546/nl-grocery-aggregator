@@ -32,3 +32,11 @@ Thumbs.db
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Ignore sandbox helper files
+sandbox/
+
+# Ignore Cursor-generated test scaffolding
+tests/__init__.py
+tests/conftest.py
+tests/test_api_smoke.py

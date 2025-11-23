@@ -1,3 +1,4 @@
+# Production dependencies
 fastapi
 uvicorn[standard]
 apify-client
@@ -5,4 +6,6 @@ python-picnic-api
 pydantic
 python-dotenv
 requests
+
+# Dev dependencies (for testing)
 pytest

@@ -1,0 +1,31 @@
+# Render configuration for NL Grocery Aggregator API
+# This file defines the deployment settings for Render.com
+
+services:
+  - type: web
+    name: nl-grocery-aggregator
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
+    plan: free
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.19
+      # Apify Configuration (required for AH and Jumbo)
+      - key: APIFY_TOKEN
+        sync: false
+      - key: APIFY_AH_ACTOR_ID
+        value: harvestedge/my-actor
+        sync: false
+      - key: APIFY_JUMBO_ACTOR_ID
+        value: harvestedge/jumbo-supermarket-scraper
+        sync: false
+      # Picnic Configuration (required for Picnic)
+      - key: PICNIC_USERNAME
+        sync: false
+      - key: PICNIC_PASSWORD
+        sync: false
+      - key: PICNIC_COUNTRY_CODE
+        value: NL
+        sync: false
+

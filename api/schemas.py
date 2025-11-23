@@ -14,7 +14,7 @@ The schemas include:
 
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from aggregator.models import CartItem
 
 
@@ -38,9 +38,8 @@ class ProductBase(BaseModel):
     is_cheapest: Optional[bool] = Field(None, description="Whether this is the cheapest option in its name group")
     raw: Optional[Dict[str, Any]] = Field(None, description="Raw product data from retailer API (if available)")
     
-    class Config:
-        """Pydantic configuration."""
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "id": "12345",
                 "retailer": "ah",
@@ -55,6 +54,7 @@ class ProductBase(BaseModel):
                 "raw": {}
             }
         }
+    )
 
 
 class SearchResponse(BaseModel):
@@ -65,9 +65,8 @@ class SearchResponse(BaseModel):
     """
     results: List[ProductBase] = Field(..., description="List of products matching the search query")
     
-    class Config:
-        """Pydantic configuration."""
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "results": [
                     {
@@ -86,6 +85,7 @@ class SearchResponse(BaseModel):
                 ]
             }
         }
+    )
 
 
 class CartItemInput(BaseModel):
@@ -102,9 +102,8 @@ class CartItemInput(BaseModel):
     image_url: Optional[str] = Field(None, description="URL to product image")
     health_tag: Optional[str] = Field(None, description="Health category tag (optional)")
     
-    class Config:
-        """Pydantic configuration."""
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "retailer": "ah",
                 "product_id": "12345",
@@ -115,6 +114,7 @@ class CartItemInput(BaseModel):
                 "health_tag": "neutral"
             }
         }
+    )
 
 
 class CartView(BaseModel):
@@ -126,9 +126,8 @@ class CartView(BaseModel):
     items: List[CartItem] = Field(..., description="List of cart items")
     total: float = Field(..., ge=0, description="Total price of all items in the cart (in euros)")
     
-    class Config:
-        """Pydantic configuration."""
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "items": [
                     {
@@ -144,6 +143,7 @@ class CartView(BaseModel):
                 "total": 3.98
             }
         }
+    )
 
 
 

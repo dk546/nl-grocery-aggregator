@@ -12,7 +12,7 @@ The models support:
 - Validating data types and required fields
 """
 
-from typing import Optional
+from typing import Dict, Optional
 
 from pydantic import BaseModel
 
@@ -59,7 +59,7 @@ class Cart(BaseModel):
     Attributes:
         items: Dictionary mapping "retailer:product_id" to CartItem objects
     """
-    items: dict[str, CartItem] = {}
+    items: Dict[str, CartItem] = {}
 
     def add(self, item: CartItem) -> None:
         """

@@ -23,11 +23,14 @@ from .health import tag_health
 
 
 # Map retailer names to their connector classes
-CONNECTOR_MAP = {
-    "ah": AHConnector,
-    "jumbo": JumboConnector,
-    "picnic": PicnicConnector,
-}
+# Using a function to get the classes dynamically so that patches in tests work correctly
+def _get_connector_map():
+    """Get the connector map, accessing classes dynamically for test compatibility."""
+    return {
+        "ah": AHConnector,
+        "jumbo": JumboConnector,
+        "picnic": PicnicConnector,
+    }
 
 # Health tag priority for sorting (higher number = sorted later)
 HEALTH_PRIORITY = {
@@ -45,11 +48,15 @@ def group_by_name_and_mark_cheapest(products: List[Dict[str, Any]]) -> List[Dict
     the cheapest product (lowest price_eur) is marked with is_cheapest=True,
     and all others are marked with is_cheapest=False.
     
+    This function preserves the original order of products in the input list.
+    Products with the same normalized name are processed together, but the
+    overall relative order of products is maintained.
+    
     Args:
         products: List of product dictionaries, each must have "name" and "price_eur" keys
         
     Returns:
-        List of product dictionaries with added "is_cheapest" field
+        List of product dictionaries with added "is_cheapest" field, preserving input order
         
     Examples:
         >>> products = [
@@ -61,16 +68,22 @@ def group_by_name_and_mark_cheapest(products: List[Dict[str, Any]]) -> List[Dict
         >>> # Melk group: cheapest (1.99) should be marked True
         >>> # Bread group: only one item, should be marked True
     """
-    # Group products by normalized (lowercase) name
-    groups: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    # Group products by normalized (lowercase) name while preserving insertion order
+    groups: Dict[str, List[Dict[str, Any]]] = {}
+    group_order: List[str] = []  # Track order of groups as they appear
     
     for product in products:
         normalized_name = (product.get("name") or "").lower().strip()
+        if normalized_name not in groups:
+            groups[normalized_name] = []
+            group_order.append(normalized_name)
         groups[normalized_name].append(product)
     
-    # Process each group and mark cheapest
+    # Process each group in original order and mark cheapest
     result = []
-    for normalized_name, group in groups.items():
+    for normalized_name in group_order:
+        group = groups[normalized_name]
+        
         # Find the cheapest product in the group
         # Handle missing prices by treating them as very expensive (9999)
         cheapest_index = 0
@@ -95,7 +108,7 @@ def aggregated_search(
     retailers: List[str],
     size_per_retailer: int = 10,
     page: int = 0,
-    sort_by: str = "price",
+    sort_by: Optional[str] = None,
     health_filter: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
@@ -110,7 +123,7 @@ def aggregated_search(
         retailers: List of retailer identifiers to search (e.g., ["ah", "jumbo", "picnic"])
         size_per_retailer: Number of results to fetch from each retailer (default: 10)
         page: Page number for pagination (0-indexed, default: 0)
-        sort_by: Sort criterion - "price", "retailer", or "health" (default: "price")
+        sort_by: Sort criterion - "price", "retailer", or "health" (default: None, preserves order)
         health_filter: Optional filter for health tag - "healthy" or "unhealthy" (default: None)
         
     Returns:
@@ -143,16 +156,19 @@ def aggregated_search(
     """
     results = []
 
+    # Get connector map dynamically to allow test patches to work
+    connector_map = _get_connector_map()
+    
     # Iterate through requested retailers
     for retailer in retailers:
         # Skip invalid retailer names
-        if retailer not in CONNECTOR_MAP:
+        if retailer not in connector_map:
             print(f"Warning: Unknown retailer '{retailer}', skipping...")
             continue
 
         try:
             # Instantiate connector for this retailer
-            connector = CONNECTOR_MAP[retailer]()
+            connector = connector_map[retailer]()
             
             # Search products for this retailer
             items = connector.search_products(query, size=size_per_retailer, page=page)
@@ -190,8 +206,9 @@ def aggregated_search(
             HEALTH_PRIORITY.get(x.get("health_tag", "neutral"), 2),
             x.get("price_eur") or 9999  # Secondary sort by price for same health tag
         ))
-    # Default to price sorting if sort_by is unrecognized
-    else:
+    # If sort_by is None or empty string, don't sort (preserve original order)
+    # Otherwise default to price sorting if sort_by is unrecognized
+    elif sort_by and sort_by not in ("price", "retailer", "health"):
         results.sort(key=lambda x: x.get("price_eur") or 9999)
 
     return results
