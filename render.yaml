@@ -1,7 +1,9 @@
-# Render configuration for NL Grocery Aggregator API
+# Render configuration for NL Grocery Aggregator
 # This file defines the deployment settings for Render.com
+# Two services: Backend API (FastAPI) and Frontend UI (Streamlit)
 
 services:
+  # Backend API Service (FastAPI)
   - type: web
     name: nl-grocery-aggregator
     env: python
@@ -25,4 +27,17 @@ services:
         value: ""
       - key: PICNIC_COUNTRY_CODE
         value: "NL"
+
+  # Frontend UI Service (Streamlit)
+  - type: web
+    name: nl-grocery-aggregator-frontend
+    env: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "streamlit run streamlit_app/app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true"
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.10.0"
+      - key: BACKEND_URL
+        value: "https://nl-grocery-aggregator.onrender.com"
 

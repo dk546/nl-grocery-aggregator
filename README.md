@@ -1,9 +1,10 @@
 # NL Grocery Aggregator
 
-A FastAPI backend service that aggregates grocery product search results from multiple Dutch supermarkets (Albert Heijn, Jumbo, and Picnic). This service provides a unified API to search, compare, and manage shopping carts across retailers.
+A full-stack application that aggregates grocery product search results from multiple Dutch supermarkets (Albert Heijn, Jumbo, and Picnic). The project includes a FastAPI backend service and a Streamlit web frontend, providing a unified interface to search, compare, and manage shopping carts across retailers.
 
 ## Features
 
+### Backend (FastAPI)
 - **Unified Product Search**: Search for products across Albert Heijn, Jumbo, and Picnic in a single API call
 - **Normalized Product Schema**: All products are normalized into a consistent format regardless of retailer
 - **Health Tagging**: Automatic classification of products as "healthy", "unhealthy", or "neutral"
@@ -11,6 +12,16 @@ A FastAPI backend service that aggregates grocery product search results from mu
 - **Shopping Cart**: In-memory cart management with session-based isolation
 - **Delivery Slots**: Retrieve available delivery time slots (currently Picnic only)
 - **RESTful API**: Clean FastAPI endpoints with automatic OpenAPI documentation
+
+### Frontend (Streamlit)
+- **Search & Compare**: Interactive product search with filters, health tags, and price comparison
+- **My Basket**: Shopping cart management with session persistence across pages
+- **Health Insights**: Basket health analytics showing health tag distribution and spending by category
+- **Recipes & Ideas**: Recipe collection with one-click ingredient addition to basket
+  - Automatically finds the healthiest available products for each ingredient
+  - Falls back to cheapest option if health scores are tied
+  - Best-effort matching: adds what it can find, reports missing ingredients
+- **System Status**: Backend health monitoring and API documentation links
 
 ## Project Structure
 
@@ -30,12 +41,34 @@ nl-grocery-aggregator/
 │   ├── main.py             # FastAPI app and endpoints
 │   ├── schemas.py          # Pydantic request/response schemas
 │   └── config.py           # Configuration management
+├── streamlit_app/          # Streamlit frontend application
+│   ├── app.py              # Main Streamlit entrypoint
+│   ├── pages/              # Multi-page Streamlit app pages
+│   │   ├── 00_🔧_System_Status.py
+│   │   ├── 01_🏠_Home.py
+│   │   ├── 02_🛒_Search_and_Compare.py
+│   │   ├── 03_🧺_My_Basket.py
+│   │   ├── 04_📊_Health_Insights.py
+│   │   └── 05_🍳_Recipes.py
+│   ├── utils/              # Frontend utilities
+│   │   ├── api_client.py   # Backend API client
+│   │   ├── session.py      # Session management
+│   │   ├── recipes_data.py # Recipe data module
+│   │   └── ui_components.py # Reusable UI components
+│   └── theme/              # Streamlit theme configuration
 ├── sandbox/                # Manual testing scripts
 ├── tests/                  # Test suite
 └── requirements.txt        # Python dependencies
 ```
 
-## Setup
+## Local Development
+
+This guide covers running both the backend (FastAPI) and frontend (Streamlit) locally for development.
+
+### Prerequisites
+
+- Python 3.10 or higher
+- Virtual environment manager (conda or venv)
 
 ### 1. Create and Activate Virtual Environment
 
@@ -62,19 +95,43 @@ pip install -r requirements.txt
 
 ### 3. Environment Configuration
 
-Create a `.env` file in the project root with the following variables:
+The project uses `.env` file for local development. Environment variables are automatically loaded by `api.config` module when the application starts.
+
+**Step 1: Copy the example file**
+```bash
+# Copy .env.example to .env (if it exists, otherwise create it manually)
+# On Windows PowerShell:
+Copy-Item .env.example .env
+# On macOS/Linux:
+cp .env.example .env
+```
+
+**Step 2: Fill in your credentials**
+
+Edit `.env` file at the project root and add your actual API tokens and credentials:
 
 ```env
-# Apify Configuration (required for AH and Jumbo)
+# Apify Configuration (required for AH and Jumbo connectors)
 APIFY_TOKEN=your_apify_token_here
 APIFY_AH_ACTOR_ID=harvestedge/my-actor
 APIFY_JUMBO_ACTOR_ID=harvestedge/jumbo-supermarket-scraper
 
-# Picnic Configuration (required for Picnic)
+# Picnic Configuration (required for Picnic connector)
 PICNIC_USERNAME=your_email@example.com
 PICNIC_PASSWORD=your_password_here
 PICNIC_COUNTRY_CODE=NL
+
+# Backend URL (for Streamlit frontend - points to local backend by default)
+BACKEND_URL=http://localhost:8000
+
+# OpenAI API Key (optional - for AI Health Coach feature in Health Insights page)
+OPENAI_API_KEY=your_openai_api_key_here
 ```
+
+**Important:** 
+- The `.env` file is automatically loaded by `api.config` when importing `api.main` or `streamlit_app.app`.
+- Never commit `.env` to version control (it contains secrets).
+- For production on Render, environment variables are set in the Render dashboard (not via .env file).
 
 #### Environment Variables Reference
 
@@ -86,21 +143,147 @@ PICNIC_COUNTRY_CODE=NL
 | `PICNIC_USERNAME` | Yes* | - | Picnic account email/username |
 | `PICNIC_PASSWORD` | Yes* | - | Picnic account password |
 | `PICNIC_COUNTRY_CODE` | No | `NL` | Picnic country code |
+| `BACKEND_URL` | No | `http://localhost:8000` | Backend API URL (used by Streamlit frontend) |
+| `OPENAI_API_KEY` | No | - | OpenAI API key for AI Health Coach feature (optional) |
 
 *Required only if you want to use the corresponding retailer. You can use the API with just one retailer if desired.
 
-## Running the API
+### 4. Running the Backend (FastAPI)
 
-Start the FastAPI server:
+Start the FastAPI server locally:
+
+```bash
+uvicorn api.main:app --reload --port 8000
+```
+
+The `--reload` flag enables auto-reload on code changes (development only).
+
+The API will be available at:
+- **API**: http://localhost:8000
+- **Swagger UI**: http://localhost:8000/docs
+- **ReDoc**: http://localhost:8000/redoc
+
+**Note:** The `api.config` module automatically loads `.env` when `api.main` is imported, so all environment variables will be available to connectors.
+
+### 5. Running the Frontend (Streamlit)
+
+In a **separate terminal** (with the same virtual environment activated):
+
+```bash
+streamlit run streamlit_app/app.py
+```
+
+The Streamlit app will open in your browser at `http://localhost:8501`.
+
+**Note:**
+- The Streamlit app also imports `api.config`, so `.env` is loaded automatically.
+- The `utils/api_client.get_backend_url()` function will use `BACKEND_URL` from `.env` (defaults to `http://localhost:8000`).
+- If the backend is not running, the frontend will show connection errors in the UI.
+
+### 6. Testing the End-to-End Flow
+
+1. **Start the backend** in one terminal:
+   ```bash
+   uvicorn api.main:app --reload --port 8000
+   ```
+
+2. **Start the frontend** in another terminal:
+   ```bash
+   streamlit run streamlit_app/app.py
+   ```
+
+3. **Test the search flow:**
+   - Open the Streamlit app in your browser (usually opens automatically at `http://localhost:8501`)
+   - Navigate to "Search & Compare" page from the sidebar
+   - Search for a common product like "melk" (milk in Dutch)
+   - Select all retailers (Albert Heijn, Jumbo, Picnic)
+   - Click "Search"
+   - You should see product results with prices, health tags, and retailer information
+   - Select some products using the checkboxes and click "Add Selected Item(s) to Basket"
+
+4. **Test the basket flow:**
+   - Navigate to "My Basket" page
+   - Verify your selected items appear in the basket
+   - The basket persists across page navigations (same session)
+
+5. **Test Health Insights:**
+   - Navigate to "Health Insights" page
+   - View health metrics based on items in your basket
+   - See health tag distribution and spending by category
+
+6. **Test Recipes & Ideas:**
+   - Navigate to "Recipes & Ideas" page
+   - Expand a recipe to see ingredients
+   - Click "🛒 Add Ingredients to Basket"
+   - The app will automatically find the healthiest products for each ingredient
+   - Check "My Basket" to see the added items
+
+4. **Check backend logs** in the terminal where uvicorn is running:
+   - You should see structured logging output showing:
+     - Search request parameters
+     - Connector results counts (raw products from each retailer)
+     - Aggregated response size
+
+### Troubleshooting
+
+**"APIFY_TOKEN is not set" error:**
+- Ensure `.env` file exists at the project root
+- Verify `APIFY_TOKEN=your_token` is in the `.env` file
+- Check that `api.config` is being imported (it should be imported in `api/main.py`)
+
+**"Could not connect to backend" in Streamlit:**
+- Verify backend is running on `http://localhost:8000`
+- Check `BACKEND_URL` in `.env` matches the backend URL
+- Try accessing `http://localhost:8000/docs` directly in your browser
+
+**Empty search results:**
+- Check backend terminal logs for connector errors
+- Verify API tokens are valid (Apify token, Picnic credentials)
+- Some retailers may require valid accounts/API access
+
+## Running the API Only
+
+If you only want to run the backend API without the Streamlit frontend:
 
 ```bash
 uvicorn api.main:app --reload
 ```
 
-The API will be available at:
-- **API**: http://127.0.0.1:8000
-- **Swagger UI**: http://127.0.0.1:8000/docs
-- **ReDoc**: http://127.0.0.1:8000/redoc
+The API will be available at http://127.0.0.1:8000
+
+## Frontend Features
+
+### Search & Compare
+- **Product Search**: Search across multiple retailers with a single query
+- **Advanced Filters**: Filter by retailer, health category, and sort options
+- **Unified Comparison Table**: View all products in one table with comparison columns
+- **Add to Basket**: Select multiple products and add them to your basket with one click
+- **Form State Persistence**: Search filters persist when navigating between pages
+
+### My Basket
+- **Shopping Cart Management**: View, manage, and remove items from your basket
+- **Session Persistence**: Basket persists across page navigations within the same browser session
+- **Cart Summary**: See total items, total price, and retailer breakdown
+
+### Health Insights
+- **Basket Health Profile**: Analytics dashboard showing health metrics for your basket
+- **Health Tag Distribution**: Visual breakdown of healthy vs. less healthy items
+- **Spending by Category**: See how much you're spending on healthy vs. unhealthy items
+- **AI Health Coach** (optional): Get AI-generated insights about your basket (requires `OPENAI_API_KEY`)
+
+### Recipes & Ideas
+- **Recipe Collection**: Browse healthy recipes organized by meal type and tags
+- **One-Click Ingredient Addition**: Add all recipe ingredients to basket with a single click
+- **Smart Product Selection**: Automatically selects the healthiest available product for each ingredient
+  - Prioritizes products tagged as "healthy"
+  - Falls back to cheapest option if health scores are tied
+  - Best-effort matching: adds what can be found, reports missing ingredients
+- **Recipe Details**: View ingredients, instructions, prep time, and difficulty for each recipe
+
+### System Status
+- **Backend Health**: Monitor backend API status and connectivity
+- **API Documentation**: Quick access to API documentation
+- **System Diagnostics**: View system details and planned diagnostic features
 
 ## API Endpoints
 
@@ -166,6 +349,17 @@ Get available delivery slots for a retailer:
 curl "http://127.0.0.1:8000/delivery/slots?retailer=picnic"
 ```
 
+## Production Deployment
+
+For production/staging, the backend is deployed on Render using `render.yaml`. 
+
+**Environment Variables on Render:**
+- Set all required environment variables in the Render dashboard (APIFY_TOKEN, PICNIC_USERNAME, PICNIC_PASSWORD, etc.)
+- For the Streamlit frontend service, set `BACKEND_URL` to your backend service URL (e.g., `https://nl-grocery-aggregator.onrender.com`)
+- The `.env` file is **not** used on Render; platform environment variables are used instead.
+
+See the [Deployment](#deployment) section below for detailed Render setup instructions.
+
 ## Running Tests
 
 Run the full test suite:
@@ -199,13 +393,10 @@ pip install -r requirements.txt
 
 **Start Command:**
 ```bash
-uvicorn api.main:app --host 0.0.0.0 --port $PORT
-```
-
-Note: Render automatically provides the `$PORT` environment variable. For local testing with a specific port, use:
-```bash
 uvicorn api.main:app --host 0.0.0.0 --port 10000
 ```
+
+Note: The backend service uses port 10000 as configured in `render.yaml`. Render will automatically route traffic to this port.
 
 ### Required Environment Variables
 

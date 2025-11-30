@@ -14,6 +14,13 @@ All connectors must:
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any
 
+# Import ProductInternal for type hints (avoid circular import by using TYPE_CHECKING if needed)
+try:
+    from aggregator.models import ProductInternal
+except ImportError:
+    # Fallback for type checking or if models not yet available
+    ProductInternal = Any
+
 
 class BaseConnector(ABC):
     """
@@ -21,7 +28,7 @@ class BaseConnector(ABC):
     
     This class defines the interface that all retailer connectors must implement,
     ensuring consistency across different retailer APIs. Each connector handles
-    the specifics of its retailer's API while normalizing data into a common format.
+    the specifics of its retailer's API while normalizing data into ProductInternal.
     
     Attributes:
         retailer: String identifier for the retailer (e.g., "ah", "jumbo", "picnic")
@@ -39,16 +46,9 @@ class BaseConnector(ABC):
             page: Page number (0-indexed) for pagination
             
         Returns:
-            List of normalized product dictionaries. Each dictionary should contain:
-            - retailer: Retailer identifier (str)
-            - id: Product identifier (str)
-            - name: Product name (str)
-            - price_eur: Price in euros (float)
-            - unit: Unit description (str, optional)
-            - unit_size: Size information (str, optional)
-            - image_url: URL to product image (str, optional)
-            - url: Product URL on retailer website (str, optional)
-            - raw: Raw product data from retailer API (dict, optional)
+            List of ProductInternal objects, each containing normalized product data
+            with fields such as: id, retailer, name, price, quantity, quantity_unit, etc.
+            All connectors must map their raw API responses into ProductInternal format.
         """
         pass
 

@@ -1,9 +1,12 @@
 """
-Configuration management for NL Grocery Aggregator API.
+Configuration management for NL Grocery Aggregator.
 
-This module centralizes environment variable loading and validation for all
-connectors (AH, Jumbo, Picnic). It uses python-dotenv to load variables from
-a .env file at the project root.
+This module centralizes environment variable loading from .env file at project root.
+It should be imported early in both backend (api/main.py) and frontend (streamlit_app/app.py)
+to ensure .env is loaded before any other code accesses environment variables.
+
+On Render/production, .env will not exist, but load_dotenv() is safe to call and will no-op.
+Environment variables from Render dashboard will be used instead.
 
 Environment Variables:
 - APIFY_TOKEN: Required for AH and Jumbo connectors (Apify API token)
@@ -12,9 +15,11 @@ Environment Variables:
 - PICNIC_USERNAME: Required for Picnic connector
 - PICNIC_PASSWORD: Required for Picnic connector
 - PICNIC_COUNTRY_CODE: Optional, defaults to "NL"
+- BACKEND_URL: Optional, backend URL (defaults to http://localhost:8000 for local dev)
 """
 
 import os
+from pathlib import Path
 from typing import Optional
 
 try:
@@ -29,17 +34,24 @@ def load_env_file() -> None:
     """
     Load environment variables from .env file at project root.
     
-    This function is safe to call multiple times. It only loads if python-dotenv
-    is available and the .env file exists.
+    This function locates the project root by going up from this file's location
+    (api/config.py -> project root) and loads .env if it exists.
+    
+    Safe to call multiple times. On Render/production where .env doesn't exist,
+    this is a no-op and platform environment variables will be used.
     """
     if _DOTENV_AVAILABLE and load_dotenv:
-        # Load from project root (where this file is: api/config.py -> project root)
-        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        env_path = os.path.join(project_root, ".env")
+        # Get project root: api/config.py -> api/ -> project root
+        this_file = Path(__file__).resolve()
+        project_root = this_file.parent.parent
+        env_path = project_root / ".env"
+        
+        # Load .env if it exists (override=False means existing env vars take precedence)
         load_dotenv(env_path, override=False)
 
 
 # Load .env file on module import (if available)
+# This happens when api.config or config.env is imported
 load_env_file()
 
 

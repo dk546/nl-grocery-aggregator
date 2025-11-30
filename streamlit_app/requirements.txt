@@ -1,0 +1,8 @@
+# Streamlit Frontend Dependencies
+# Note: For deployment, you can use the main requirements.txt at project root,
+# or keep this file for clarity. Main requirements.txt includes all dependencies.
+
+streamlit
+pandas
+requests
+

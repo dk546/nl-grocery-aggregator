@@ -21,35 +21,14 @@ from typing import Any, Dict, List, Optional
 
 from apify_client import ApifyClient
 
+from aggregator.models import ProductInternal
+from aggregator.utils.units import parse_quantity_and_unit, canonicalize_unit, compute_price_per_unit
+
 from .base import BaseConnector
 
-# Import load_dotenv but don't call it unconditionally
-# We'll wrap it to prevent loading when environment is empty (test scenario)
-try:
-    from dotenv import load_dotenv as _load_dotenv_original
-    
-    # Wrap load_dotenv to prevent loading when environment is empty (test scenario)
-    def _safe_load_dotenv(*args, **kwargs):
-        """Wrapper that skips loading if environment is empty (test scenario)."""
-        # If environment is completely empty, don't load (definitely a test)
-        # This prevents loading from .env file when @patch.dict(os.environ, {}) is used
-        env_count = len(os.environ)
-        key_exists = "APIFY_TOKEN" in os.environ
-        
-        # If environment is empty (definitely a test), don't load
-        if env_count == 0:
-            return None
-        # If key doesn't exist and environment is very small (likely test), don't load
-        # The threshold of <= 3 covers test scenarios where @patch.dict creates minimal environment
-        if not key_exists and env_count <= 3:
-            return None
-        # Normal scenario - allow loading from .env
-        return _load_dotenv_original(*args, **kwargs)
-    
-    # Use the wrapped version
-    load_dotenv = _safe_load_dotenv
-except ImportError:
-    load_dotenv = None
+# Note: Environment variables should be loaded by api.config module early in the application lifecycle.
+# For local development, .env is loaded when api.config is imported (in api/main.py or streamlit_app/app.py).
+# For tests, environment is typically patched before imports, so .env won't interfere.
 
 
 class JumboConnector(BaseConnector):
@@ -84,33 +63,15 @@ class JumboConnector(BaseConnector):
         if apify_token:
             token = apify_token
         else:
-            # Check environment variable first
+            # Read from environment variable (loaded from .env by api.config for local dev, or from Render env for production)
             token = os.getenv("APIFY_TOKEN")
-            
-            # If token not found, check if we should try loading from .env
-            # When @patch.dict(os.environ, {}) is used in tests, the key won't exist in os.environ
-            # In that case, we should NOT call load_dotenv() as it might load from .env file
-            if not token:
-                # Check if APIFY_TOKEN key exists in environment
-                key_exists = "APIFY_TOKEN" in os.environ
-                
-                # NEVER load from .env if the key doesn't exist in os.environ
-                # This is crucial for tests with @patch.dict(os.environ, {}) where .env file might exist
-                # Even if a .env file exists with APIFY_TOKEN, we should not load it in test scenarios
-                if not key_exists:
-                    # Key doesn't exist in os.environ - this indicates a test scenario
-                    # Never call load_dotenv() in this case, even if a .env file exists
-                    # The wrapper will also prevent loading, but this is the primary guard
-                    token = None
-                else:
-                    # Key exists in os.environ but token is None/empty - shouldn't happen
-                    # But if it does, token already None so no action needed
-                    pass
         
         if not token:
             raise RuntimeError(
                 "APIFY_TOKEN is not set. Please add it to your .env file at the project root:\n"
-                "APIFY_TOKEN=your_apify_token_here"
+                "APIFY_TOKEN=your_apify_token_here\n\n"
+                "For local development, ensure api.config is imported early (it should be imported in api/main.py).\n"
+                "For production, set APIFY_TOKEN in your deployment environment (e.g., Render dashboard)."
             )
         
         self.actor_id = actor_id or os.getenv("APIFY_JUMBO_ACTOR_ID", "harvestedge/jumbo-supermarket-scraper")
@@ -180,33 +141,85 @@ class JumboConnector(BaseConnector):
             end = start + size
             page_items = items[start:end]
             
-            # Normalize results to standard format
-            normalized: List[Dict[str, Any]] = []
+            # Normalize results to ProductInternal
+            normalized: List[ProductInternal] = []
             for item in page_items:
-                # Extract price - handle string format "1,99" or "1.99"
+                # Extract and parse price - handle string format "1,99" or "1.99"
                 price_str = item.get("price_eur") or item.get("price") or "0"
                 try:
                     # Replace comma with dot for European number format
-                    price_eur = float(str(price_str).replace(",", "."))
+                    price = float(str(price_str).replace(",", "."))
                 except (ValueError, AttributeError):
-                    price_eur = 0.0
+                    price = 0.0
                 
-                # Extract image URL if available
+                # Extract identifiers
+                external_id = str(item.get("id") or item.get("url") or "")
+                product_id = f"{self.retailer}:{external_id}"
+                
+                # Extract basic product info
+                name = item.get("name") or ""
+                brand = item.get("brand") or None
+                category = item.get("category") or None
+                
+                # Extract media and links
                 image_url = item.get("image_url") or item.get("image") or None
+                product_url = item.get("url") or None
                 
-                normalized.append(
-                    {
-                        "retailer": self.retailer,
-                        "id": str(item.get("id") or item.get("url") or ""),
-                        "name": item.get("name") or "",
-                        "price_eur": price_eur,
-                        "unit": item.get("unit") or "",
-                        "unit_size": item.get("unit_size") or "",
-                        "image_url": image_url,
-                        "url": item.get("url") or "",
-                        "raw": item,
-                    }
+                # Parse quantity and unit from unit_size
+                unit_size_str = item.get("unit_size") or ""
+                quantity, quantity_unit = parse_quantity_and_unit(unit_size_str)
+                
+                # Legacy unit field (for backward compatibility)
+                unit = item.get("unit") or ""
+                
+                # Compute price per unit if we have quantity information
+                price_per_unit, price_per_unit_type = compute_price_per_unit(
+                    price, quantity, quantity_unit
                 )
+                
+                # Extract promotion info
+                is_promotion = bool(item.get("discount") or item.get("promo") or item.get("promotion"))
+                promo_text = None
+                if is_promotion:
+                    promo_text = item.get("promo") or item.get("discount") or item.get("promotion")
+                    if isinstance(promo_text, dict):
+                        promo_text = str(promo_text)
+                
+                # Build ProductInternal
+                product_internal = ProductInternal(
+                    id=product_id,
+                    retailer=self.retailer,
+                    name=name,
+                    brand=brand,
+                    category=category,
+                    image_url=image_url,
+                    product_url=product_url,
+                    price=price,
+                    currency="EUR",
+                    price_per_unit=price_per_unit,
+                    unit=canonicalize_unit(price_per_unit_type) if price_per_unit_type else None,
+                    quantity=quantity,
+                    quantity_unit=quantity_unit,
+                    is_promotion=is_promotion,
+                    promo_text=promo_text,
+                    source_raw=item,
+                    # Legacy fields for backward compatibility
+                    price_eur=price,
+                    unit_size=unit_size_str,
+                )
+                # Convert to dict for backward compatibility with tests
+                product_dict = product_internal.model_dump()
+                product_dict["price_eur"] = price
+                product_dict["unit"] = unit  # Keep original unit, not canonicalized
+                product_dict["unit_size"] = unit_size_str
+                product_dict["url"] = product_url or ""  # Convert None to ""
+                product_dict["image_url"] = image_url or None
+                # For backward compatibility, use original external_id instead of normalized "{retailer}:{id}"
+                product_dict["id"] = external_id
+                # Map source_raw to raw for backward compatibility
+                if "source_raw" in product_dict:
+                    product_dict["raw"] = product_dict.pop("source_raw")
+                normalized.append(product_dict)
             
             return normalized
             

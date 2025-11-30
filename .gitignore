@@ -28,15 +28,31 @@ Thumbs.db
 .env
 *.local.json
 
+# Streamlit secrets (keep config, ignore secrets)
+.streamlit/secrets.toml
+
+# Cursor / AI tooling
+.cursor/
+
+# Type checking / linters / caches
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+
 # Test / coverage
 .pytest_cache/
 .coverage
 htmlcov/
 
+# Logs & temp files
+*.log
+*.tmp
+*.bak
+
 # Ignore sandbox helper files
 sandbox/
 
-# Ignore Cursor-generated test scaffolding
+# Ignore Cursor-generated test scaffolding (ok to keep real tests later)
 tests/__init__.py
 tests/conftest.py
 tests/test_api_smoke.py

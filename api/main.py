@@ -19,6 +19,10 @@ Access API documentation at:
     http://localhost:8000/redoc (ReDoc)
 """
 
+# Import config early to load .env file before any other code accesses environment variables
+# This ensures local development uses .env file, while Render uses platform env vars
+import api.config  # noqa: F401
+
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, Header, Query, HTTPException, status
@@ -29,7 +33,7 @@ from aggregator.models import CartItem, Cart
 from aggregator.connectors.ah_connector import AHConnector
 from aggregator.connectors.jumbo_connector import JumboConnector
 from aggregator.connectors.picnic_connector import PicnicConnector
-from api.schemas import ProductBase, SearchResponse, CartItemInput, CartView
+from api.schemas import ProductBase, SearchResponse, CartItemInput, CartView, CartItemOut
 
 app = FastAPI(
     title="NL Grocery Aggregator API",
@@ -57,15 +61,24 @@ VALID_RETAILERS = {"ah", "jumbo", "picnic"}
 
 def get_session(x_session_id: Optional[str] = Header(None, alias="X-Session-ID")) -> str:
     """
-    Get or create a session ID from the X-Session-ID header.
+    Get session ID from the X-Session-ID header.
     
     Args:
-        x_session_id: Session ID from X-Session-ID header (optional)
+        x_session_id: Session ID from X-Session-ID header
         
     Returns:
-        Session ID string (uses "demo-user" as default if not provided)
+        Session ID string
+        
+    Raises:
+        HTTPException 400: If session ID is not provided
     """
-    return x_session_id or "demo-user"
+    if not x_session_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="X-Session-ID header is required for cart operations. Please provide a session identifier.",
+            headers={"X-Session-ID": "required"}
+        )
+    return x_session_id
 
 
 def dict_to_product(product_dict: Dict[str, Any]) -> ProductBase:
@@ -74,17 +87,25 @@ def dict_to_product(product_dict: Dict[str, Any]) -> ProductBase:
     
     Args:
         product_dict: Dictionary containing product data from aggregated_search
+                     (now comes from ProductPublic.model_dump(), so includes both price and price_eur)
         
     Returns:
         ProductBase model instance with all fields including is_cheapest and raw
     """
+    # Extract price - prefer price_eur for backward compatibility, fallback to price
+    price_value = product_dict.get("price_eur") or product_dict.get("price") or 0.0
+    
     return ProductBase(
         id=str(product_dict.get("id", "")),
         retailer=product_dict.get("retailer", ""),
         name=product_dict.get("name", ""),
-        price_eur=float(product_dict.get("price_eur", 0.0)),
+        price=float(price_value),  # Use price field
+        price_eur=float(price_value),  # Also set price_eur alias
         unit=product_dict.get("unit"),
         unit_size=product_dict.get("unit_size"),
+        quantity=product_dict.get("quantity"),
+        quantity_unit=product_dict.get("quantity_unit"),
+        price_per_unit=product_dict.get("price_per_unit"),
         image_url=product_dict.get("image_url"),
         url=product_dict.get("url"),
         health_tag=product_dict.get("health_tag", "neutral"),
@@ -111,7 +132,9 @@ def search(
     page: int = Query(0, ge=0, description="Page number (0-indexed)"),
     sort_by: Optional[str] = Query(
         "price",
-        description="Sort criterion: 'price' (lowest first), 'retailer' (alphabetical), or 'health' (healthy first)"
+        description="Sort criterion: 'price' or 'price_asc' (lowest first), 'price_desc' (highest first), "
+                    "'price_per_unit_asc' (lowest per unit first), 'price_per_unit_desc' (highest per unit first), "
+                    "'retailer' (alphabetical), or 'health' (healthy first)"
     ),
     health_filter: Optional[str] = Query(
         None,
@@ -130,7 +153,8 @@ def search(
         retailers: Comma-separated list of retailer identifiers (e.g., "ah,jumbo,picnic")
         size: Number of results to return per retailer (1-50)
         page: Page number for pagination (0-indexed)
-        sort_by: Sort criterion - "price", "retailer", or "health" (default: "price")
+        sort_by: Sort criterion - "price"/"price_asc", "price_desc", "price_per_unit_asc", 
+                "price_per_unit_desc", "retailer", or "health" (default: "price")
         health_filter: Optional filter for health tag - "healthy" or "unhealthy"
         
     Returns:
@@ -163,8 +187,12 @@ def search(
             detail=f"Invalid retailer(s): {', '.join(invalid_retailers)}. Valid retailers: {', '.join(sorted(VALID_RETAILERS))}"
         )
     
-    # Validate sort_by parameter
-    valid_sort_options = {"price", "retailer", "health"}
+    # Validate sort_by parameter (accept both legacy and new format)
+    valid_sort_options = {
+        "price", "price_asc", "price_desc",
+        "price_per_unit", "price_per_unit_asc", "price_per_unit_desc",
+        "retailer", "health"
+    }
     if sort_by and sort_by.lower() not in valid_sort_options:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -183,7 +211,7 @@ def search(
     try:
         # Perform aggregated search with all parameters
         # Note: query and retailers are positional args to match test expectations
-        results_dicts = aggregated_search(
+        search_response = aggregated_search(
             q,  # positional: query
             retailer_list,  # positional: retailers
             size_per_retailer=size,
@@ -192,10 +220,14 @@ def search(
             health_filter=health_filter
         )
         
+        # Extract results and connector status from response
+        results_dicts = search_response.get("results", [])
+        connectors_status = search_response.get("connectors_status", {})
+        
         # Convert dictionaries to ProductBase models
         products = [dict_to_product(p) for p in results_dicts]
         
-        return SearchResponse(results=products)
+        return SearchResponse(results=products, connectors_status=connectors_status)
     except RuntimeError as e:
         # Handle connector errors specifically
         raise HTTPException(
@@ -220,7 +252,7 @@ def search(
 )
 def add_item(
     item: CartItemInput,
-    x_session_id: Optional[str] = Header(None, alias="X-Session-ID", description="Session identifier (defaults to 'demo-user')"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-ID", description="Session identifier (required)"),
 ) -> CartView:
     """
     Add an item to the shopping cart.
@@ -277,10 +309,25 @@ def add_item(
         
         cart = add_to_cart(session, cart_item.model_dump())
         
-        # Convert Cart to CartView format
+        # Convert Cart to CartView format with CartItemOut (includes line_total)
+        items_out = [
+            CartItemOut(
+                retailer=item.retailer,
+                product_id=item.product_id,
+                name=item.name,
+                price_eur=item.price_eur,
+                quantity=item.quantity,
+                image_url=item.image_url,
+                health_tag=item.health_tag,
+                line_total=item.total_price
+            )
+            for item in cart.items.values()
+        ]
+        
         return CartView(
-            items=list(cart.items.values()),
-            total=cart.total()
+            items=items_out,
+            total_price=cart.total(),
+            total_by_retailer=cart.total_by_retailer()
         )
     except ValueError as e:
         raise HTTPException(
@@ -306,7 +353,7 @@ def remove_item(
     retailer: str = Query(..., description="Retailer identifier (ah, jumbo, or picnic)"),
     product_id: str = Query(..., min_length=1, description="Product identifier"),
     qty: int = Query(1, ge=1, description="Quantity to remove (default: 1)"),
-    x_session_id: Optional[str] = Header(None, alias="X-Session-ID", description="Session identifier (defaults to 'demo-user')"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-ID", description="Session identifier (required)"),
 ) -> CartView:
     """
     Remove an item from the shopping cart or reduce its quantity.
@@ -348,10 +395,25 @@ def remove_item(
     try:
         cart = remove_from_cart(session, retailer_lower, product_id, qty)
         
-        # Convert Cart to CartView format
+        # Convert Cart to CartView format with CartItemOut (includes line_total)
+        items_out = [
+            CartItemOut(
+                retailer=item.retailer,
+                product_id=item.product_id,
+                name=item.name,
+                price_eur=item.price_eur,
+                quantity=item.quantity,
+                image_url=item.image_url,
+                health_tag=item.health_tag,
+                line_total=item.total_price
+            )
+            for item in cart.items.values()
+        ]
+        
         return CartView(
-            items=list(cart.items.values()),
-            total=cart.total()
+            items=items_out,
+            total_price=cart.total(),
+            total_by_retailer=cart.total_by_retailer()
         )
     except Exception as e:
         raise HTTPException(
@@ -368,7 +430,7 @@ def remove_item(
     description="Retrieve the contents of the shopping cart for the current session along with the total price.",
 )
 def view_cart(
-    x_session_id: Optional[str] = Header(None, alias="X-Session-ID", description="Session identifier (defaults to 'demo-user')"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-ID", description="Session identifier (required)"),
 ) -> CartView:
     """
     View the current shopping cart for a session.
@@ -397,10 +459,25 @@ def view_cart(
     try:
         cart = get_cart(session)
         
-        # Convert Cart to CartView format
+        # Convert Cart to CartView format with CartItemOut (includes line_total)
+        items_out = [
+            CartItemOut(
+                retailer=item.retailer,
+                product_id=item.product_id,
+                name=item.name,
+                price_eur=item.price_eur,
+                quantity=item.quantity,
+                image_url=item.image_url,
+                health_tag=item.health_tag,
+                line_total=item.total_price
+            )
+            for item in cart.items.values()
+        ]
+        
         return CartView(
-            items=list(cart.items.values()),
-            total=cart.total()
+            items=items_out,
+            total_price=cart.total(),
+            total_by_retailer=cart.total_by_retailer()
         )
     except Exception as e:
         raise HTTPException(
