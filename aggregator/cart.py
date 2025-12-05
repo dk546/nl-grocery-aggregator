@@ -94,3 +94,49 @@ def remove_from_cart(session_id: str, retailer: str, product_id: str, qty: int =
     cart.remove(retailer, product_id, qty)
     return cart
 
+
+def replace_cart(session_id: str, items: list[dict]) -> Cart:
+    """
+    Replace the entire cart contents with a new list of items.
+    
+    This clears all existing items and adds the provided items. Useful for applying
+    saved basket templates.
+    
+    Args:
+        session_id: Unique identifier for the user session
+        items: List of item dictionaries (must match CartItem fields)
+        
+    Returns:
+        Updated Cart instance with new items
+        
+    Raises:
+        ValidationError: If any item_data doesn't match CartItem schema
+    """
+    # Create a new empty cart
+    cart = Cart(items={})
+    
+    # Add all items
+    for item_data in items:
+        item = CartItem(**item_data)
+        cart.add(item)
+    
+    # Store the new cart
+    CART_STORE[session_id] = cart
+    
+    # Log basket update event (non-blocking)
+    try:
+        from aggregator.events import log_event
+        log_event(
+            "basket_updated",
+            session_id=session_id,
+            payload={
+                "total_items": len(cart.items),
+                "total_value": cart.total(),
+                "update_type": "replace",
+            },
+        )
+    except Exception:
+        pass  # Non-blocking
+    
+    return cart
+

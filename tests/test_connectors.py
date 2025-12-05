@@ -18,6 +18,7 @@ import pytest
 from aggregator.connectors.ah_connector import AHConnector
 from aggregator.connectors.jumbo_connector import JumboConnector
 from aggregator.connectors.picnic_connector import PicnicConnector
+from aggregator.connectors.dirk_connector import DirkConnector
 
 
 class TestAHConnector:
@@ -41,9 +42,11 @@ class TestAHConnector:
         connector = AHConnector()
         assert connector.actor_id == "custom/actor"
     
-    @patch.dict(os.environ, {})
-    def test_initialization_missing_token(self):
+    @patch.dict(os.environ, {}, clear=True)
+    @patch("api.config.load_env_file")  # Prevent .env from being loaded during test
+    def test_initialization_missing_token(self, mock_load_env):
         """Test AH connector raises error when token is missing."""
+        mock_load_env.return_value = None  # Prevent loading .env
         with pytest.raises(RuntimeError, match="APIFY_TOKEN is not set"):
             AHConnector()
     
@@ -150,12 +153,13 @@ class TestAHConnector:
         mock_client.actor.return_value = mock_actor
         mock_client.dataset.return_value = mock_dataset
         
-        # Create 10 items
-        mock_items = [
-            {"supermarket": "AH", "id": str(i), "name": f"Product {i}", "price_eur": str(i)}
-            for i in range(10)
-        ]
-        mock_dataset.iterate_items.return_value = iter(mock_items)
+        # Create 10 items - need fresh iterator for each call
+        def create_mock_items():
+            return [
+                {"supermarket": "AH", "id": str(i), "name": f"Product {i}", "price_eur": str(i)}
+                for i in range(10)
+            ]
+        mock_dataset.iterate_items.side_effect = lambda: iter(create_mock_items())
         
         mock_apify_client_class.return_value = mock_client
         
@@ -248,9 +252,130 @@ class TestPicnicConnector:
         )
         assert connector.retailer == "picnic"
     
-    @patch.dict(os.environ, {})
-    def test_initialization_missing_credentials(self):
+    @patch.dict(os.environ, {}, clear=True)
+    @patch("api.config.load_env_file")  # Prevent .env from being loaded during test
+    def test_initialization_missing_credentials(self, mock_load_env):
         """Test Picnic connector raises error when credentials are missing."""
-        with pytest.raises(RuntimeError, match="credentials missing"):
+        mock_load_env.return_value = None  # Prevent loading .env
+        with pytest.raises(RuntimeError, match="Picnic credentials not configured"):
             PicnicConnector()
+
+
+class TestDirkConnector:
+    """Tests for Dirk connector using Apify actor."""
+    
+    @patch.dict(os.environ, {"APIFY_TOKEN": "test-token"})
+    @patch("aggregator.connectors.dirk_connector.ApifyClient")
+    def test_initialization(self, mock_apify_client):
+        """Test Dirk connector initializes correctly with Apify token."""
+        connector = DirkConnector()
+        
+        # Verify ApifyClient was called with token
+        mock_apify_client.assert_called_once_with("test-token")
+        assert connector.retailer == "dirk"
+        assert connector.actor_id == "harvestedge/dirk-supermarket-scraper"
+    
+    @patch.dict(os.environ, {"APIFY_TOKEN": "test-token", "APIFY_DIRK_ACTOR_ID": "custom/dirk-actor"})
+    @patch("aggregator.connectors.dirk_connector.ApifyClient")
+    def test_initialization_with_custom_actor_id(self, mock_apify_client):
+        """Test Dirk connector uses custom actor ID from env var."""
+        connector = DirkConnector()
+        assert connector.actor_id == "custom/dirk-actor"
+    
+    @patch.dict(os.environ, {}, clear=True)
+    @patch("api.config.load_env_file")  # Prevent .env from being loaded during test
+    def test_initialization_missing_token(self, mock_load_env):
+        """Test Dirk connector raises error when token is missing."""
+        mock_load_env.return_value = None  # Prevent loading .env
+        with pytest.raises(RuntimeError, match="APIFY_TOKEN is not set"):
+            DirkConnector()
+    
+    @patch.dict(os.environ, {"APIFY_TOKEN": "test-token"})
+    @patch("aggregator.connectors.dirk_connector.ApifyClient")
+    def test_search_products_normalizes_results(self, mock_apify_client_class):
+        """Test search_products normalizes Apify actor results correctly."""
+        # Mock Apify client and actor run
+        mock_client = Mock()
+        mock_actor = Mock()
+        mock_run = Mock()
+        mock_run.__getitem__ = Mock(return_value="dataset-123")
+        mock_actor.call.return_value = mock_run
+        
+        mock_dataset = Mock()
+        mock_client.actor.return_value = mock_actor
+        mock_client.dataset.return_value = mock_dataset
+        
+        # Mock dataset items
+        mock_items = [
+            {
+                "supermarket": "Dirk",
+                "id": "456",
+                "name": "Dirk Product",
+                "price_eur": "2,49",
+                "url": "https://dirk.nl/product/456",
+                "unit": "per stuk",
+                "unit_size": "1kg",
+            },
+            {
+                "supermarket": "Dirk",
+                "id": "789",
+                "name": "Another Dirk Product",
+                "price_eur": "3.75",
+                "url": "https://dirk.nl/product/789",
+            },
+        ]
+        mock_dataset.iterate_items.return_value = iter(mock_items)
+        
+        mock_apify_client_class.return_value = mock_client
+        
+        # Test search
+        connector = DirkConnector()
+        results = connector.search_products("melk", size=10, page=0)
+        
+        # Verify actor was called correctly
+        mock_actor.call.assert_called_once()
+        call_kwargs = mock_actor.call.call_args[1]["run_input"]
+        assert call_kwargs["keyterms"] == ["melk"]
+        
+        # Verify results are normalized
+        assert len(results) == 2
+        assert results[0]["retailer"] == "dirk"
+        assert results[0]["id"] == "456"
+        assert results[0]["name"] == "Dirk Product"
+        assert results[0]["price_eur"] == 2.49
+        assert results[0]["unit"] == "per stuk"
+        assert "raw" in results[0]
+    
+    @patch.dict(os.environ, {"APIFY_TOKEN": "test-token"})
+    @patch("aggregator.connectors.dirk_connector.ApifyClient")
+    def test_search_products_filters_non_dirk_products(self, mock_apify_client_class):
+        """Test search_products filters out non-Dirk products."""
+        mock_client = Mock()
+        mock_actor = Mock()
+        mock_run = Mock()
+        mock_run.__getitem__ = Mock(return_value="dataset-123")
+        mock_actor.call.return_value = mock_run
+        
+        mock_dataset = Mock()
+        mock_client.actor.return_value = mock_actor
+        mock_client.dataset.return_value = mock_dataset
+        
+        # Mix of Dirk and non-Dirk products
+        mock_items = [
+            {"supermarket": "Dirk", "id": "1", "name": "Dirk Product"},
+            {"supermarket": "AH", "id": "2", "name": "AH Product"},
+            {"supermarket": "Dirk", "id": "3", "name": "Another Dirk Product"},
+        ]
+        mock_dataset.iterate_items.return_value = iter(mock_items)
+        
+        mock_apify_client_class.return_value = mock_client
+        
+        connector = DirkConnector()
+        results = connector.search_products("test", size=10, page=0)
+        
+        # Should only return Dirk products
+        assert len(results) == 2
+        assert all(r["retailer"] == "dirk" for r in results)
+        assert results[0]["name"] == "Dirk Product"
+        assert results[1]["name"] == "Another Dirk Product"
 

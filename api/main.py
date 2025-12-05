@@ -28,16 +28,34 @@ from typing import Any, Dict, List, Optional
 from fastapi import FastAPI, Header, Query, HTTPException, status
 
 from aggregator.search import aggregated_search
-from aggregator.cart import get_cart, add_to_cart, remove_from_cart
+from aggregator.cart import get_cart, add_to_cart, remove_from_cart, replace_cart
 from aggregator.models import CartItem, Cart
+from aggregator.templates import (
+    list_templates_for_session,
+    save_template_for_session,
+    get_template_for_session,
+    delete_template_for_session,
+)
+from aggregator.events import log_event
 from aggregator.connectors.ah_connector import AHConnector
 from aggregator.connectors.jumbo_connector import JumboConnector
 from aggregator.connectors.picnic_connector import PicnicConnector
-from api.schemas import ProductBase, SearchResponse, CartItemInput, CartView, CartItemOut
+from api.schemas import (
+    ProductBase,
+    SearchResponse,
+    CartItemInput,
+    CartView,
+    CartItemOut,
+    BasketSavingsResponse,
+    BasketTemplate,
+    BasketTemplateListResponse,
+    SaveBasketTemplateRequest,
+    SaveBasketTemplateResponse,
+)
 
 app = FastAPI(
     title="NL Grocery Aggregator API",
-    description="Backend API for aggregating grocery products from Albert Heijn, Jumbo, and Picnic",
+    description="Backend API for aggregating grocery products from Albert Heijn, Jumbo, Picnic, and Dirk",
     version="1.0.0",
     tags_metadata=[
         {
@@ -56,7 +74,7 @@ app = FastAPI(
 )
 
 # Valid retailer identifiers
-VALID_RETAILERS = {"ah", "jumbo", "picnic"}
+VALID_RETAILERS = {"ah", "jumbo", "picnic", "dirk"}
 
 
 def get_session(x_session_id: Optional[str] = Header(None, alias="X-Session-ID")) -> str:
@@ -119,14 +137,14 @@ def dict_to_product(product_dict: Dict[str, Any]) -> ProductBase:
     response_model=SearchResponse,
     tags=["search"],
     summary="Search for products across multiple retailers",
-    description="Search for products across Albert Heijn, Jumbo, and Picnic. Results are normalized, "
+    description="Search for products across Albert Heijn, Jumbo, Picnic, and Dirk. Results are normalized, "
                 "health-tagged, grouped by name with cheapest marked, and sorted according to sort_by parameter.",
 )
 def search(
     q: str = Query(..., min_length=1, description="Search query string (e.g., 'melk', 'brood')"),
     retailers: str = Query(
         "picnic,ah,jumbo",
-        description="Comma-separated list of retailers to search. Valid values: ah, jumbo, picnic"
+        description="Comma-separated list of retailers to search. Valid values: ah, jumbo, picnic, dirk"
     ),
     size: int = Query(10, ge=1, le=50, description="Number of results per retailer (max: 50)"),
     page: int = Query(0, ge=0, description="Page number (0-indexed)"),
@@ -176,7 +194,7 @@ def search(
     if not retailer_list:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="At least one retailer must be specified. Valid retailers: ah, jumbo, picnic"
+            detail="At least one retailer must be specified. Valid retailers: ah, jumbo, picnic, dirk"
         )
     
     # Validate retailer names
@@ -226,6 +244,34 @@ def search(
         
         # Convert dictionaries to ProductBase models
         products = [dict_to_product(p) for p in results_dicts]
+        
+        # Log search event
+        try:
+            session = get_session(None)  # Try to get session if available (may be None for search)
+            log_event(
+                "search_performed",
+                session_id=session,
+                payload={
+                    "query": q,
+                    "retailers": retailer_list,
+                    "result_count": len(products),
+                    "size": size,
+                    "page": page,
+                    "sort_by": sort_by or "price",
+                    "health_filter": health_filter,
+                },
+            )
+        except Exception:
+            # Non-blocking: log search even if session extraction fails
+            log_event(
+                "search_performed",
+                session_id=None,
+                payload={
+                    "query": q,
+                    "retailers": retailer_list,
+                    "result_count": len(products),
+                },
+            )
         
         return SearchResponse(results=products, connectors_status=connectors_status)
     except RuntimeError as e:
@@ -309,6 +355,23 @@ def add_item(
         
         cart = add_to_cart(session, cart_item.model_dump())
         
+        # Log cart item addition event
+        try:
+            log_event(
+                "cart_items_added",
+                session_id=session,
+                payload={
+                    "retailer": cart_item.retailer,
+                    "product_id": cart_item.product_id,
+                    "name": cart_item.name,
+                    "quantity": cart_item.quantity,
+                    "price_eur": cart_item.price_eur,
+                    "health_tag": cart_item.health_tag,
+                },
+            )
+        except Exception:
+            pass  # Non-blocking
+        
         # Convert Cart to CartView format with CartItemOut (includes line_total)
         items_out = [
             CartItemOut(
@@ -350,7 +413,7 @@ def add_item(
                 "exceeds the item's quantity, the item is completely removed.",
 )
 def remove_item(
-    retailer: str = Query(..., description="Retailer identifier (ah, jumbo, or picnic)"),
+    retailer: str = Query(..., description="Retailer identifier (ah, jumbo, picnic, or dirk)"),
     product_id: str = Query(..., min_length=1, description="Product identifier"),
     qty: int = Query(1, ge=1, description="Quantity to remove (default: 1)"),
     x_session_id: Optional[str] = Header(None, alias="X-Session-ID", description="Session identifier (required)"),
@@ -362,7 +425,7 @@ def remove_item(
     is greater than or equal to the item's quantity, the item is completely removed.
     
     Args:
-        retailer: Retailer identifier (ah, jumbo, or picnic)
+        retailer: Retailer identifier (ah, jumbo, picnic, or dirk)
         product_id: Product identifier (minimum 1 character)
         qty: Quantity to remove (default: 1, minimum: 1)
         x_session_id: Session ID from X-Session-ID header (optional, defaults to "demo-user")
@@ -394,6 +457,20 @@ def remove_item(
     
     try:
         cart = remove_from_cart(session, retailer_lower, product_id, qty)
+        
+        # Log cart item removal event
+        try:
+            log_event(
+                "cart_items_removed",
+                session_id=session,
+                payload={
+                    "retailer": retailer_lower,
+                    "product_id": product_id,
+                    "quantity_removed": qty,
+                },
+            )
+        except Exception:
+            pass  # Non-blocking
         
         # Convert Cart to CartView format with CartItemOut (includes line_total)
         items_out = [
@@ -495,7 +572,7 @@ def view_cart(
     response_model=List[dict],
 )
 def get_slots(
-    retailer: str = Query("picnic", description="Retailer identifier (ah, jumbo, or picnic)"),
+    retailer: str = Query("picnic", description="Retailer identifier (ah, jumbo, picnic, or dirk)"),
 ) -> Any:
     """
     Get available delivery slots for a retailer.
@@ -547,6 +624,353 @@ def get_slots(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving {retailer_lower} delivery slots: {str(e)}"
         ) from e
+
+
+@app.get(
+    "/basket/savings",
+    response_model=BasketSavingsResponse,
+    tags=["cart"],
+    summary="Find cheaper alternatives for basket items",
+    description="Analyze the current basket and find cheaper alternatives for each item, "
+                "calculating potential savings. Uses aggregated_search to find alternatives.",
+)
+def get_basket_savings(
+    x_session_id: Optional[str] = Header(None, alias="X-Session-ID", description="Session identifier (required)"),
+) -> BasketSavingsResponse:
+    """
+    Get potential savings by finding cheaper alternatives for basket items.
+    
+    This endpoint:
+    1. Loads the current basket for the session
+    2. Searches for cheaper alternatives for each item
+    3. Calculates estimated savings
+    4. Returns suggestions sorted by potential savings
+    
+    Args:
+        x_session_id: Session ID from X-Session-ID header (required)
+        
+    Returns:
+        BasketSavingsResponse containing:
+        - potential_savings_total: Total estimated savings across all suggestions
+        - suggestions: List of savings suggestions with current/alternative products
+        
+    Raises:
+        HTTPException 400: If session ID is not provided
+        HTTPException 500: If there's an error analyzing savings
+        
+    Example:
+        ```bash
+        GET /basket/savings
+        Header: X-Session-ID: user123
+        ```
+    """
+    session = get_session(x_session_id)
+    
+    try:
+        # Get current basket
+        cart = get_cart(session)
+        
+        if not cart.items:
+            # Empty basket - return empty response
+            return BasketSavingsResponse(
+                potential_savings_total=0.0,
+                suggestions=[]
+            )
+        
+        # Convert cart items to dict format for savings analysis
+        basket_items = []
+        for item in cart.items.values():
+            item_dict = {
+                "retailer": item.retailer,
+                "product_id": item.product_id,
+                "name": item.name,
+                "price_eur": item.price_eur,
+                "quantity": item.quantity,
+                "line_total": item.total_price,
+                "image_url": item.image_url,
+                "health_tag": item.health_tag,
+                # Note: price_per_unit may not be available in cart items,
+                # but savings logic will handle None gracefully
+                "price_per_unit": None,  # Cart items don't store this, but search results will have it
+            }
+            basket_items.append(item_dict)
+        
+        # Call savings finder
+        from aggregator.savings import find_basket_savings
+        
+        savings_result = find_basket_savings(
+            basket_items=basket_items,
+            search_fn=aggregated_search,
+        )
+        
+        # Convert to response model
+        suggestions = []
+        for sug in savings_result.get("suggestions", []):
+            current_dict = sug.get("current", {})
+            alt_dict = sug.get("alternative", {})
+            
+            suggestions.append(
+                SavingsSuggestion(
+                    current=SavingsProduct(
+                        retailer=current_dict.get("retailer", ""),
+                        product_id=str(current_dict.get("product_id", "")),
+                        name=current_dict.get("name", ""),
+                        price_eur=float(current_dict.get("price_eur", 0.0)),
+                        price_per_unit=current_dict.get("price_per_unit"),
+                        quantity=current_dict.get("quantity"),
+                        line_total=current_dict.get("line_total"),
+                        image_url=current_dict.get("image_url"),
+                        health_tag=current_dict.get("health_tag"),
+                    ),
+                    alternative=SavingsProduct(
+                        retailer=alt_dict.get("retailer", ""),
+                        product_id=str(alt_dict.get("product_id", "")),
+                        name=alt_dict.get("name", ""),
+                        price_eur=float(alt_dict.get("price_eur", 0.0)),
+                        price_per_unit=alt_dict.get("price_per_unit"),
+                        image_url=alt_dict.get("image_url"),
+                        health_tag=alt_dict.get("health_tag"),
+                    ),
+                    estimated_line_total=float(sug.get("estimated_line_total", 0.0)),
+                    estimated_savings=float(sug.get("estimated_savings", 0.0)),
+                )
+            )
+        
+        basket_savings_response = BasketSavingsResponse(
+            potential_savings_total=float(savings_result.get("potential_savings_total", 0.0)),
+            suggestions=suggestions
+        )
+        
+        # Log savings analysis event
+        try:
+            log_event(
+                "savings_analysis_run",
+                session_id=session,
+                payload={
+                    "suggestions_count": len(suggestions),
+                    "potential_savings_total": float(savings_result.get("potential_savings_total", 0.0)),
+                    "basket_items_count": len(cart.items),
+                },
+            )
+        except Exception:
+            pass  # Non-blocking
+        
+        return basket_savings_response
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions (e.g., missing session ID)
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error analyzing basket savings: {str(e)}"
+        ) from e
+
+
+@app.get(
+    "/api/basket/templates",
+    response_model=BasketTemplateListResponse,
+    tags=["cart"],
+    summary="List saved basket templates",
+    description="Retrieve all saved basket templates for the current session.",
+)
+def list_basket_templates(
+    x_session_id: Optional[str] = Header(None, alias="X-Session-ID", description="Session identifier (required)"),
+) -> BasketTemplateListResponse:
+    """List all saved basket templates for a session."""
+    session = get_session(x_session_id)
+    templates = list_templates_for_session(session)
+    
+    # Convert to Pydantic models
+    pydantic_templates = []
+    for t in templates:
+        template_items = []
+        for item in t.items:
+            line_total = item.get("line_total") or (float(item.get("price_eur", 0.0)) * int(item.get("quantity", 1)))
+            from api.schemas import BasketTemplateItem
+            template_items.append(
+                BasketTemplateItem(
+                    retailer=item.get("retailer", ""),
+                    product_id=str(item.get("product_id", "")),
+                    name=item.get("name", ""),
+                    price_eur=float(item.get("price_eur", 0.0)),
+                    quantity=int(item.get("quantity", 1)),
+                    line_total=line_total,
+                    health_tag=item.get("health_tag"),
+                    image_url=item.get("image_url"),
+                )
+            )
+        pydantic_templates.append(
+            BasketTemplate(
+                id=t.id,
+                name=t.name,
+                created_at=t.created_at,
+                items=template_items,
+            )
+        )
+    
+    return BasketTemplateListResponse(templates=pydantic_templates)
+
+
+@app.post(
+    "/api/basket/templates",
+    response_model=SaveBasketTemplateResponse,
+    tags=["cart"],
+    summary="Save current basket as a template",
+    description="Save the current basket contents as a named template for reuse.",
+)
+def save_basket_template(
+    payload: SaveBasketTemplateRequest,
+    x_session_id: Optional[str] = Header(None, alias="X-Session-ID", description="Session identifier (required)"),
+) -> SaveBasketTemplateResponse:
+    """Save the current basket as a named template."""
+    session = get_session(x_session_id)
+    cart = get_cart(session)
+    
+    if not cart.items:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot save an empty basket as a template."
+        )
+    
+    # Convert cart items to dict format
+    items = []
+    for item in cart.items.values():
+        items.append({
+            "retailer": item.retailer,
+            "product_id": item.product_id,
+            "name": item.name,
+            "price_eur": item.price_eur,
+            "quantity": item.quantity,
+            "line_total": item.total_price,
+            "image_url": item.image_url,
+            "health_tag": item.health_tag,
+        })
+    
+    # Save template
+    template = save_template_for_session(session, payload.name, items)
+    
+    # Convert to Pydantic model
+    template_items = []
+    for item in template.items:
+        from api.schemas import BasketTemplateItem
+        template_items.append(
+            BasketTemplateItem(
+                retailer=item.get("retailer", ""),
+                product_id=str(item.get("product_id", "")),
+                name=item.get("name", ""),
+                price_eur=float(item.get("price_eur", 0.0)),
+                quantity=int(item.get("quantity", 1)),
+                line_total=item.get("line_total"),
+                health_tag=item.get("health_tag"),
+                image_url=item.get("image_url"),
+            )
+        )
+    
+    p_template = BasketTemplate(
+        id=template.id,
+        name=template.name,
+        created_at=template.created_at,
+        items=template_items,
+    )
+    
+    # Log template save event
+    try:
+        log_event(
+            "template_saved",
+            session_id=session,
+            payload={
+                "template_name": template.name,
+                "template_id": template.id,
+                "item_count": len(template.items),
+            },
+        )
+    except Exception:
+        pass  # Non-blocking
+    
+    return SaveBasketTemplateResponse(template=p_template)
+
+
+@app.post(
+    "/api/basket/templates/{template_id}/apply",
+    response_model=BasketTemplate,
+    tags=["cart"],
+    summary="Apply a saved basket template",
+    description="Replace the current basket contents with a saved template.",
+)
+def apply_basket_template(
+    template_id: str,
+    x_session_id: Optional[str] = Header(None, alias="X-Session-ID", description="Session identifier (required)"),
+) -> BasketTemplate:
+    """Apply a saved template to replace the current basket."""
+    session = get_session(x_session_id)
+    template = get_template_for_session(session, template_id)
+    if not template:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Template not found."
+        )
+    
+    # Replace cart with template items (logging happens inside replace_cart)
+    replace_cart(session, template.items)
+    
+    # Log template applied event
+    try:
+        cart_after = get_cart(session)
+        log_event(
+            "template_applied",
+            session_id=session,
+            payload={
+                "template_name": template.name,
+                "template_id": template.id,
+                "item_count": len(template.items),
+                "basket_total_items": len(cart_after.items),
+                "basket_total_value": cart_after.total(),
+            },
+        )
+    except Exception:
+        pass  # Non-blocking
+    
+    # Convert to Pydantic model
+    template_items = []
+    for item in template.items:
+        from api.schemas import BasketTemplateItem
+        template_items.append(
+            BasketTemplateItem(
+                retailer=item.get("retailer", ""),
+                product_id=str(item.get("product_id", "")),
+                name=item.get("name", ""),
+                price_eur=float(item.get("price_eur", 0.0)),
+                quantity=int(item.get("quantity", 1)),
+                line_total=item.get("line_total"),
+                health_tag=item.get("health_tag"),
+                image_url=item.get("image_url"),
+            )
+        )
+    
+    return BasketTemplate(
+        id=template.id,
+        name=template.name,
+        created_at=template.created_at,
+        items=template_items,
+    )
+
+
+@app.delete(
+    "/api/basket/templates/{template_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["cart"],
+    summary="Delete a saved basket template",
+    description="Delete a saved basket template.",
+)
+def delete_basket_template(
+    template_id: str,
+    x_session_id: Optional[str] = Header(None, alias="X-Session-ID", description="Session identifier (required)"),
+) -> None:
+    """Delete a saved template."""
+    session = get_session(x_session_id)
+    delete_template_for_session(session, template_id)
+    return
 
 
 @app.get("/")

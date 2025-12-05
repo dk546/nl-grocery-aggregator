@@ -179,8 +179,9 @@ class TestAggregatedSearch:
             page=0,
             sort_by="price"
         )
-        
+
         # Verify results are sorted by price (lowest first)
+        results = response["results"]
         assert len(results) == 3
         assert results[0]["price_eur"] == 0.99  # Cheapest first
         # Extract results from response
@@ -223,8 +224,9 @@ class TestAggregatedSearch:
             size_per_retailer=10,
             page=0
         )
-        
+
         # Verify results include both products
+        results = response["results"]
         assert len(results) == 2
         # Product with missing price should be sorted last (price defaults to 9999)
         assert results[0]["price_eur"] == 2.50
@@ -257,8 +259,9 @@ class TestAggregatedSearch:
             size_per_retailer=10,
             page=0
         )
-        
+
         # Verify only valid retailer was searched
+        results = response["results"]
         assert len(results) == 1
         assert results[0]["retailer"] == "ah"
         # Invalid retailer should not cause errors
@@ -290,13 +293,13 @@ class TestAggregatedSearch:
         mock_picnic.return_value = mock_picnic_instance
         
         # Perform search - should continue even if one connector fails
-        results = aggregated_search(
+        response = aggregated_search(
             query="test",
             retailers=["ah", "jumbo"],
             size_per_retailer=10,
             page=0
         )
-        
+
         # Verify we still get results from the working connector
         # Extract results from response
         results = response["results"]
@@ -334,8 +337,9 @@ class TestAggregatedSearch:
             size_per_retailer=10,
             page=0
         )
-        
+
         # Verify all retailers are searched
+        results = response["results"]
         assert len(results) == 3
         retailers = [r["retailer"] for r in results]
         assert "ah" in retailers
@@ -404,8 +408,9 @@ class TestAggregatedSearch:
             page=0,
             sort_by="retailer"
         )
-        
+
         # Verify results are sorted by retailer (alphabetical: ah, jumbo, picnic)
+        results = response["results"]
         assert len(results) == 3
         assert results[0]["retailer"] == "ah"
         # Extract results from response
@@ -440,8 +445,9 @@ class TestAggregatedSearch:
             page=0,
             sort_by="health"
         )
-        
+
         # Verify results are sorted by health: healthy first, then neutral, then unhealthy
+        results = response["results"]
         assert len(results) == 4
         assert results[0]["health_tag"] == "healthy"
         # Extract results from response
@@ -481,8 +487,9 @@ class TestAggregatedSearch:
             page=0,
             health_filter="healthy"
         )
-        
+
         # Verify only healthy products are returned
+        results = response["results"]
         assert len(results) == 2
         assert all(r["health_tag"] == "healthy" for r in results)
         # Extract results from response
@@ -517,8 +524,9 @@ class TestAggregatedSearch:
             page=0,
             health_filter="unhealthy"
         )
-        
+
         # Verify only unhealthy products are returned
+        results = response["results"]
         assert len(results) == 2
         assert all(r["health_tag"] == "unhealthy" for r in results)
         # Extract results from response
@@ -594,8 +602,9 @@ class TestAggregatedSearch:
             size_per_retailer=10,
             page=0
         )
-        
+
         # Verify all products have is_cheapest field
+        results = response["results"]
         assert len(results) == 3
         assert all("is_cheapest" in r for r in results)
         
@@ -632,7 +641,7 @@ class TestAggregatedSearch:
         mock_picnic.return_value.search_products.return_value = []
         
         # Perform search
-        results = aggregated_search(
+        response = aggregated_search(
             query="melk",
             retailers=["ah", "jumbo"],
             size_per_retailer=10,
@@ -676,8 +685,9 @@ class TestAggregatedSearch:
             size_per_retailer=10,
             page=0
         )
-        
+
         # Verify all products are marked as cheapest (each is only one in its group)
+        results = response["results"]
         assert len(results) == 3
         assert all(r["is_cheapest"] is True for r in results)
     
@@ -701,7 +711,7 @@ class TestAggregatedSearch:
         mock_picnic.return_value.search_products.return_value = []
         
         # Perform search with health_filter and sort_by="price"
-        results = aggregated_search(
+        response = aggregated_search(
             query="test",
             retailers=["ah"],
             size_per_retailer=10,
@@ -709,7 +719,7 @@ class TestAggregatedSearch:
             sort_by="price",
             health_filter="healthy"
         )
-        
+
         # Verify only healthy products are returned, sorted by price
         # Extract results from response
         results = response["results"]

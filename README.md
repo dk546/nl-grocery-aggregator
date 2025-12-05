@@ -1,27 +1,45 @@
 # NL Grocery Aggregator
 
-A full-stack application that aggregates grocery product search results from multiple Dutch supermarkets (Albert Heijn, Jumbo, and Picnic). The project includes a FastAPI backend service and a Streamlit web frontend, providing a unified interface to search, compare, and manage shopping carts across retailers.
+A full-stack application that aggregates grocery product search results from multiple Dutch supermarkets (Albert Heijn, Jumbo, Picnic, and Dirk). The project includes a FastAPI backend service and a modern Streamlit web frontend with card-based layouts, hero images, and a consistent brand design, providing a unified interface to search, compare, and manage shopping carts across retailers.
 
 ## Features
 
 ### Backend (FastAPI)
-- **Unified Product Search**: Search for products across Albert Heijn, Jumbo, and Picnic in a single API call
+- **Unified Product Search**: Search for products across Albert Heijn, Jumbo, Picnic, and Dirk in a single API call
 - **Normalized Product Schema**: All products are normalized into a consistent format regardless of retailer
 - **Health Tagging**: Automatic classification of products as "healthy", "unhealthy", or "neutral"
 - **Price Comparison**: Automatically marks the cheapest option for products with the same name
 - **Shopping Cart**: In-memory cart management with session-based isolation
+- **Savings Finder**: Analyze basket items and find cheaper alternatives across retailers
+- **Saved Baskets/Templates**: Save and reuse basket configurations as named templates
+- **Event Logging**: Internal event logging system for analytics (search, cart, savings, templates)
+- **Search Caching**: TTL-based in-memory cache for search results (60-second TTL)
 - **Delivery Slots**: Retrieve available delivery time slots (currently Picnic only)
 - **RESTful API**: Clean FastAPI endpoints with automatic OpenAPI documentation
 
 ### Frontend (Streamlit)
+- **Modern UI Design**: Card-based layouts, hero images, and consistent styling inspired by freasy.nl
 - **Search & Compare**: Interactive product search with filters, health tags, and price comparison
-- **My Basket**: Shopping cart management with session persistence across pages
+  - Two-column layout with side image cards
+  - Results summary with retailer highlights
+- **My Basket**: Comprehensive shopping cart management with:
+  - Dashboard-style two-column layout (basket table + side summaries)
+  - Quantity updates and item removal
+  - **Savings Finder**: Find cheaper alternatives for items in your basket
+  - **Saved Baskets/Templates**: Save current basket as a template and reuse it later
+  - Retailer totals breakdown
+  - Session persistence across pages
 - **Health Insights**: Basket health analytics showing health tag distribution and spending by category
+  - Two-column layout with charts on left, summary and swaps on right
+  - Visual health breakdown with metrics
 - **Recipes & Ideas**: Recipe collection with one-click ingredient addition to basket
+  - Filters on left, recipe cards grid on right
+  - Recipe cards with images, tags, and expandable details
   - Automatically finds the healthiest available products for each ingredient
   - Falls back to cheapest option if health scores are tied
   - Best-effort matching: adds what it can find, reports missing ingredients
 - **System Status**: Backend health monitoring and API documentation links
+- **Brand Footer**: Consistent footer across all pages with brand colors and information
 
 ## Project Structure
 
@@ -32,11 +50,18 @@ nl-grocery-aggregator/
 │   │   ├── base.py         # Base connector abstract class
 │   │   ├── ah_connector.py # Albert Heijn connector (Apify-based)
 │   │   ├── jumbo_connector.py # Jumbo connector (Apify-based)
+│   │   ├── dirk_connector.py # Dirk connector (Apify-based)
 │   │   └── picnic_connector.py # Picnic connector (python-picnic-api)
 │   ├── cart.py             # Shopping cart management
 │   ├── health.py           # Health tagging logic
 │   ├── models.py           # Pydantic models for cart
-│   └── search.py           # Aggregated search logic
+│   ├── search.py           # Aggregated search logic
+│   ├── savings.py          # Savings finder logic
+│   ├── templates.py        # Saved basket templates
+│   ├── events.py            # Event logging utility
+│   └── utils/              # Utility modules
+│       ├── cache.py        # TTL cache for search results
+│       └── units.py        # Unit normalization helpers
 ├── api/                    # FastAPI application
 │   ├── main.py             # FastAPI app and endpoints
 │   ├── schemas.py          # Pydantic request/response schemas
@@ -44,16 +69,24 @@ nl-grocery-aggregator/
 ├── streamlit_app/          # Streamlit frontend application
 │   ├── app.py              # Main Streamlit entrypoint
 │   ├── pages/              # Multi-page Streamlit app pages
-│   │   ├── 00_🔧_System_Status.py
 │   │   ├── 01_🏠_Home.py
 │   │   ├── 02_🛒_Search_and_Compare.py
 │   │   ├── 03_🧺_My_Basket.py
 │   │   ├── 04_📊_Health_Insights.py
-│   │   └── 05_🍳_Recipes.py
+│   │   ├── 05_🍳_Recipes.py
+│   │   └── 99_🔧_System_Status.py
+│   ├── assets/             # Hero images and marketing assets
+│   │   └── *.jpg           # Healthy food images (Unsplash)
+│   ├── ui/                 # UI styling and components
+│   │   └── style.py         # Global CSS, hero banners, image cards, footer
 │   ├── utils/              # Frontend utilities
 │   │   ├── api_client.py   # Backend API client
 │   │   ├── session.py      # Session management
 │   │   ├── recipes_data.py # Recipe data module
+│   │   ├── retailers.py    # Retailer configuration and mappings
+│   │   ├── profile.py      # Household profile management
+│   │   ├── sponsored_data.py # Sponsored deals data
+│   │   ├── state.py        # Session state helpers
 │   │   └── ui_components.py # Reusable UI components
 │   └── theme/              # Streamlit theme configuration
 ├── sandbox/                # Manual testing scripts
@@ -111,10 +144,11 @@ cp .env.example .env
 Edit `.env` file at the project root and add your actual API tokens and credentials:
 
 ```env
-# Apify Configuration (required for AH and Jumbo connectors)
+# Apify Configuration (required for AH, Jumbo, and Dirk connectors)
 APIFY_TOKEN=your_apify_token_here
 APIFY_AH_ACTOR_ID=harvestedge/my-actor
 APIFY_JUMBO_ACTOR_ID=harvestedge/jumbo-supermarket-scraper
+APIFY_DIRK_ACTOR_ID=harvestedge/dirk-supermarket-scraper
 
 # Picnic Configuration (required for Picnic connector)
 PICNIC_USERNAME=your_email@example.com
@@ -137,9 +171,10 @@ OPENAI_API_KEY=your_openai_api_key_here
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `APIFY_TOKEN` | Yes* | - | Apify API token for AH and Jumbo connectors |
+| `APIFY_TOKEN` | Yes* | - | Apify API token for AH, Jumbo, and Dirk connectors |
 | `APIFY_AH_ACTOR_ID` | No | `harvestedge/my-actor` | Apify actor ID for Albert Heijn |
 | `APIFY_JUMBO_ACTOR_ID` | No | `harvestedge/jumbo-supermarket-scraper` | Apify actor ID for Jumbo |
+| `APIFY_DIRK_ACTOR_ID` | No | `harvestedge/dirk-supermarket-scraper` | Apify actor ID for Dirk |
 | `PICNIC_USERNAME` | Yes* | - | Picnic account email/username |
 | `PICNIC_PASSWORD` | Yes* | - | Picnic account password |
 | `PICNIC_COUNTRY_CODE` | No | `NL` | Picnic country code |
@@ -196,7 +231,7 @@ The Streamlit app will open in your browser at `http://localhost:8501`.
    - Open the Streamlit app in your browser (usually opens automatically at `http://localhost:8501`)
    - Navigate to "Search & Compare" page from the sidebar
    - Search for a common product like "melk" (milk in Dutch)
-   - Select all retailers (Albert Heijn, Jumbo, Picnic)
+   - Select all retailers (Albert Heijn, Jumbo, Picnic, Dirk)
    - Click "Search"
    - You should see product results with prices, health tags, and retailer information
    - Select some products using the checkboxes and click "Add Selected Item(s) to Basket"
@@ -204,25 +239,41 @@ The Streamlit app will open in your browser at `http://localhost:8501`.
 4. **Test the basket flow:**
    - Navigate to "My Basket" page
    - Verify your selected items appear in the basket
+   - Try editing quantities or removing items
    - The basket persists across page navigations (same session)
+   
+5. **Test Savings Finder:**
+   - With items in your basket, click "🔎 Check for savings opportunities"
+   - Review any cheaper alternatives found
+   - Apply a swap to replace an item with a cheaper alternative
+   
+6. **Test Saved Baskets/Templates:**
+   - With items in your basket, save it as a template (e.g., "Weekly groceries")
+   - Clear or modify your basket
+   - Apply the saved template to restore your original basket
 
-5. **Test Health Insights:**
+7. **Test Health Insights:**
    - Navigate to "Health Insights" page
    - View health metrics based on items in your basket
    - See health tag distribution and spending by category
 
-6. **Test Recipes & Ideas:**
+8. **Test Recipes & Ideas:**
    - Navigate to "Recipes & Ideas" page
    - Expand a recipe to see ingredients
    - Click "🛒 Add Ingredients to Basket"
    - The app will automatically find the healthiest products for each ingredient
    - Check "My Basket" to see the added items
 
-4. **Check backend logs** in the terminal where uvicorn is running:
+9. **Check backend logs** in the terminal where uvicorn is running:
    - You should see structured logging output showing:
      - Search request parameters
      - Connector results counts (raw products from each retailer)
      - Aggregated response size
+   
+10. **Check event logs** (optional):
+    - Events are logged to `events.log` in the project root
+    - Each line is a JSON object with event type, session_id, and payload
+    - Events include: search_performed, cart_items_added, savings_analysis_run, template_saved, etc.
 
 ### Troubleshooting
 
@@ -238,7 +289,7 @@ The Streamlit app will open in your browser at `http://localhost:8501`.
 
 **Empty search results:**
 - Check backend terminal logs for connector errors
-- Verify API tokens are valid (Apify token, Picnic credentials)
+- Verify API tokens are valid (Apify token for AH/Jumbo/Dirk, Picnic credentials)
 - Some retailers may require valid accounts/API access
 
 ## Running the API Only
@@ -256,22 +307,49 @@ The API will be available at http://127.0.0.1:8000
 ### Search & Compare
 - **Product Search**: Search across multiple retailers with a single query
 - **Advanced Filters**: Filter by retailer, health category, and sort options
+- **Two-Column Layout**: Main results on left, side image card on right
+- **Results Summary**: Product count, retailers used, and highlight columns
 - **Unified Comparison Table**: View all products in one table with comparison columns
 - **Add to Basket**: Select multiple products and add them to your basket with one click
 - **Form State Persistence**: Search filters persist when navigating between pages
 
 ### My Basket
-- **Shopping Cart Management**: View, manage, and remove items from your basket
+- **Dashboard Layout**: Two-column layout with basket table centered and side summaries
+- **Top Metrics Band**: Quick overview of items, total cost, retailers, and healthy items count
+- **Shopping Cart Management**: 
+  - View, manage, and remove items from your basket
+  - Edit quantities directly in the table
+  - Remove items via checkboxes or by setting quantity to 0
+  - Update basket button to apply all changes at once
+- **Savings Finder**:
+  - Analyze current basket items to find cheaper alternatives
+  - See potential savings amount
+  - Apply swaps with one click (replaces current item with cheaper alternative)
+  - Uses same product comparison logic as search
+- **Saved Baskets/Templates**:
+  - Save current basket as a named template (e.g., "Weekly groceries")
+  - List all saved templates with creation date and item count
+  - Apply a template to replace current basket contents
+  - Delete templates you no longer need
+  - Templates are session-based (tied to your browser session)
 - **Session Persistence**: Basket persists across page navigations within the same browser session
 - **Cart Summary**: See total items, total price, and retailer breakdown
+- **Side Column**: Retailer totals, savings finder, templates, health summary, and NLGA Plus info
 
 ### Health Insights
+- **Two-Column Layout**: Charts and tables on left, summary and swaps on right
+- **Top Metrics Band**: Quick overview of healthy, neutral, and less healthy items
 - **Basket Health Profile**: Analytics dashboard showing health metrics for your basket
 - **Health Tag Distribution**: Visual breakdown of healthy vs. less healthy items
 - **Spending by Category**: See how much you're spending on healthy vs. unhealthy items
+- **Small Swaps Section**: Suggestions for healthier alternatives in the side column
 - **AI Health Coach** (optional): Get AI-generated insights about your basket (requires `OPENAI_API_KEY`)
 
 ### Recipes & Ideas
+- **Filters-on-Left Layout**: Search and filters in left column, recipe cards grid on right
+- **Recipe Cards Grid**: Two-column grid of recipe cards with images, tags, and meta info
+- **Recipe Images**: Each recipe card displays a random healthy food image from assets
+- **Expandable Details**: Click to expand recipe cards for full ingredients, instructions, and add-to-basket
 - **Recipe Collection**: Browse healthy recipes organized by meal type and tags
 - **One-Click Ingredient Addition**: Add all recipe ingredients to basket with a single click
 - **Smart Product Selection**: Automatically selects the healthiest available product for each ingredient
@@ -284,6 +362,15 @@ The API will be available at http://127.0.0.1:8000
 - **Backend Health**: Monitor backend API status and connectivity
 - **API Documentation**: Quick access to API documentation
 - **System Diagnostics**: View system details and planned diagnostic features
+- **Footer Image**: Small marketing image at the bottom
+
+### UI/UX Features
+- **Hero Images**: Healthy food images from `streamlit_app/assets/` displayed across pages
+- **Image Cards**: Smaller marketing-style images in side columns and cards
+- **Brand Footer**: Consistent footer across all pages with brand colors and information
+- **Card-Based Layouts**: Modern card-based design with rounded corners and shadows
+- **Responsive Design**: Optimized layouts that work well on different screen sizes
+- **Consistent Styling**: Global CSS with Nunito font, brand colors, and consistent spacing
 
 ## API Endpoints
 
@@ -293,13 +380,13 @@ Search for products across multiple retailers:
 
 ```bash
 # Basic search
-curl "http://127.0.0.1:8000/search?q=milk&retailers=ah,jumbo,picnic"
+curl "http://127.0.0.1:8000/search?q=milk&retailers=ah,jumbo,picnic,dirk"
 
 # Filter by specific retailer
 curl "http://127.0.0.1:8000/search?q=cola&retailers=ah"
 
 # Sort by price and filter healthy products
-curl "http://127.0.0.1:8000/search?q=banana&retailers=ah,jumbo&sort_by=price&health_filter=healthy"
+curl "http://127.0.0.1:8000/search?q=banana&retailers=ah,jumbo,dirk&sort_by=price&health_filter=healthy"
 
 # Pagination
 curl "http://127.0.0.1:8000/search?q=bread&retailers=ah&size=10&page=1"
@@ -307,7 +394,7 @@ curl "http://127.0.0.1:8000/search?q=bread&retailers=ah&size=10&page=1"
 
 **Query Parameters:**
 - `q` (required): Search query string
-- `retailers` (optional): Comma-separated list of retailers (`ah`, `jumbo`, `picnic`). Default: `picnic,ah,jumbo`
+- `retailers` (optional): Comma-separated list of retailers (`ah`, `jumbo`, `picnic`, `dirk`). Default: `picnic,ah,jumbo,dirk`
 - `size` (optional): Results per retailer (1-50). Default: `10`
 - `page` (optional): Page number (0-indexed). Default: `0`
 - `sort_by` (optional): Sort criterion (`price`, `retailer`, `health`). Default: `price`
@@ -338,6 +425,44 @@ curl "http://127.0.0.1:8000/cart/view" \
 **Remove item from cart:**
 ```bash
 curl -X POST "http://127.0.0.1:8000/cart/remove?retailer=ah&product_id=12345&qty=1" \
+  -H "X-Session-ID: user123"
+```
+
+### Basket Savings
+
+**Find cheaper alternatives for basket items:**
+```bash
+curl "http://127.0.0.1:8000/basket/savings" \
+  -H "X-Session-ID: user123"
+```
+
+Returns potential savings and suggestions for cheaper alternatives.
+
+### Saved Baskets/Templates
+
+**List saved templates:**
+```bash
+curl "http://127.0.0.1:8000/api/basket/templates" \
+  -H "X-Session-ID: user123"
+```
+
+**Save current basket as template:**
+```bash
+curl -X POST "http://127.0.0.1:8000/api/basket/templates" \
+  -H "Content-Type: application/json" \
+  -H "X-Session-ID: user123" \
+  -d '{"name": "Weekly groceries"}'
+```
+
+**Apply a template:**
+```bash
+curl -X POST "http://127.0.0.1:8000/api/basket/templates/{template_id}/apply" \
+  -H "X-Session-ID: user123"
+```
+
+**Delete a template:**
+```bash
+curl -X DELETE "http://127.0.0.1:8000/api/basket/templates/{template_id}" \
   -H "X-Session-ID: user123"
 ```
 
@@ -402,10 +527,11 @@ Note: The backend service uses port 10000 as configured in `render.yaml`. Render
 
 The following environment variables must be configured in your Render service settings:
 
-**Apify Configuration** (required for AH and Jumbo connectors):
+**Apify Configuration** (required for AH, Jumbo, and Dirk connectors):
 - `APIFY_TOKEN` - Apify API token (required)
 - `APIFY_AH_ACTOR_ID` - Apify actor ID for Albert Heijn (default: `harvestedge/my-actor`)
 - `APIFY_JUMBO_ACTOR_ID` - Apify actor ID for Jumbo (default: `harvestedge/jumbo-supermarket-scraper`)
+- `APIFY_DIRK_ACTOR_ID` - Apify actor ID for Dirk (default: `harvestedge/dirk-supermarket-scraper`)
 
 **Picnic Configuration** (required for Picnic connector):
 - `PICNIC_USERNAME` - Picnic account email/username (required)
@@ -450,6 +576,9 @@ python -m sandbox.sandbox_ah_connector
 # Test Jumbo connector
 python -m sandbox.sandbox_jumbo
 
+# Test Dirk connector (if sandbox script exists)
+# python -m sandbox.sandbox_dirk
+
 # Test aggregated search
 python -m sandbox.sandbox_search
 ```
@@ -486,10 +615,12 @@ Each retailer has a dedicated connector that:
 
 ## Limitations
 
-- **In-memory Cart**: Cart data is stored in memory and will be lost on server restart
+- **In-memory Storage**: Cart data and templates are stored in memory and will be lost on server restart
+- **Session-based**: Templates and carts are tied to session IDs (no user accounts yet)
 - **No Authentication**: API endpoints do not require authentication (development only)
 - **Rate Limiting**: No rate limiting implemented (be respectful of retailer APIs)
 - **Delivery Slots**: Only Picnic delivery slots are currently implemented
+- **Event Logging**: Events are logged to a local file (`events.log`) and are not persistent across restarts
 
 ## License
 

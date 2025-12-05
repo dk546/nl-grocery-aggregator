@@ -100,7 +100,7 @@ def search_products(
     
     Args:
         query: Search query string (e.g., "melk", "brood")
-        retailers: List of retailer identifiers (e.g., ["ah", "jumbo", "picnic"]). 
+        retailers: List of retailer identifiers (e.g., ["ah", "jumbo", "picnic", "dirk"]). 
                    Defaults to all retailers if None.
         sort_by: Sort criterion - "price", "retailer", or "health" (optional)
         health_filter: Filter by health tag - "healthy" or "unhealthy" (optional)
@@ -194,7 +194,7 @@ def add_to_cart_backend(
     
     Args:
         session_id: Session identifier for cart isolation
-        retailer: Retailer identifier (ah, jumbo, picnic)
+        retailer: Retailer identifier (ah, jumbo, picnic, dirk)
         product_id: Product identifier from retailer
         name: Product name
         price_eur: Price per unit in euros
@@ -268,6 +268,58 @@ def remove_from_cart_backend(
         return None
 
 
+def update_cart_item_quantity(
+    session_id: str,
+    retailer: str,
+    product_id: str,
+    original_quantity: int,
+    new_quantity: int,
+    item_data: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    """
+    Update the quantity of a cart item by calculating the difference and using add/remove endpoints.
+    
+    This function implements quantity updates by:
+    - If new_qty > original_qty: adds the difference via /cart/add
+    - If new_qty < original_qty: removes the difference via /cart/remove
+    - If new_qty == 0: removes the entire item via /cart/remove
+    
+    Args:
+        session_id: Session identifier
+        retailer: Retailer identifier
+        product_id: Product identifier
+        original_quantity: Current quantity in cart
+        new_quantity: Desired new quantity (0 to remove item)
+        item_data: Dict containing item fields needed for add (name, price_eur, image_url, health_tag)
+        
+    Returns:
+        Updated CartView dictionary, or None on error.
+    """
+    if new_quantity == 0:
+        # Remove entire item
+        return remove_from_cart_backend(session_id, retailer, product_id, qty=original_quantity)
+    elif new_quantity > original_quantity:
+        # Add more items
+        qty_to_add = new_quantity - original_quantity
+        return add_to_cart_backend(
+            session_id=session_id,
+            retailer=retailer,
+            product_id=product_id,
+            name=item_data.get("name", ""),
+            price_eur=item_data.get("price_eur", item_data.get("price", 0.0)),
+            quantity=qty_to_add,
+            image_url=item_data.get("image_url"),
+            health_tag=item_data.get("health_tag"),
+        )
+    elif new_quantity < original_quantity:
+        # Remove some items
+        qty_to_remove = original_quantity - new_quantity
+        return remove_from_cart_backend(session_id, retailer, product_id, qty=qty_to_remove)
+    else:
+        # No change
+        return None
+
+
 def view_cart_backend(session_id: str) -> Optional[Dict[str, Any]]:
     """
     View the current shopping cart via backend API.
@@ -291,4 +343,137 @@ def view_cart_backend(session_id: str) -> Optional[Dict[str, Any]]:
     except requests.exceptions.RequestException as e:
         st.warning(f"Could not fetch cart: {str(e)}")
         return None
+
+
+def get_basket_savings(session_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Fetch potential savings and suggestions for the current basket.
+    
+    Args:
+        session_id: Session identifier
+        
+    Returns:
+        BasketSavingsResponse dictionary with potential_savings_total and suggestions,
+        or None on error.
+    """
+    backend_url = get_backend_url()
+    
+    try:
+        response = requests.get(
+            f"{backend_url}/basket/savings",
+            headers={"X-Session-ID": session_id},
+            timeout=15  # Longer timeout as this may involve multiple searches
+        )
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        st.warning(f"Could not fetch basket savings: {str(e)}")
+        return None
+
+
+def _session_headers(session_id: str) -> Dict[str, str]:
+    """Helper to create session headers."""
+    return {"X-Session-ID": session_id}
+
+
+def list_basket_templates(session_id: str) -> Optional[Dict[str, Any]]:
+    """
+    List all saved basket templates for a session.
+    
+    Args:
+        session_id: Session identifier
+        
+    Returns:
+        BasketTemplateListResponse dictionary, or None on error.
+    """
+    backend_url = get_backend_url()
+    
+    try:
+        response = requests.get(
+            f"{backend_url}/api/basket/templates",
+            headers=_session_headers(session_id),
+            timeout=10
+        )
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        st.warning(f"Could not fetch basket templates: {str(e)}")
+        return None
+
+
+def save_basket_template(session_id: str, name: str) -> Optional[Dict[str, Any]]:
+    """
+    Save the current basket as a named template.
+    
+    Args:
+        session_id: Session identifier
+        name: Template name
+        
+    Returns:
+        SaveBasketTemplateResponse dictionary, or None on error.
+    """
+    backend_url = get_backend_url()
+    
+    try:
+        response = requests.post(
+            f"{backend_url}/api/basket/templates",
+            headers=_session_headers(session_id),
+            json={"name": name},
+            timeout=10
+        )
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        st.warning(f"Could not save basket template: {str(e)}")
+        return None
+
+
+def apply_basket_template(session_id: str, template_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Apply a saved template to replace the current basket.
+    
+    Args:
+        session_id: Session identifier
+        template_id: Template identifier
+        
+    Returns:
+        BasketTemplate dictionary, or None on error.
+    """
+    backend_url = get_backend_url()
+    
+    try:
+        response = requests.post(
+            f"{backend_url}/api/basket/templates/{template_id}/apply",
+            headers=_session_headers(session_id),
+            timeout=15  # Longer timeout as this may involve multiple cart operations
+        )
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        st.warning(f"Could not apply basket template: {str(e)}")
+        return None
+
+
+def delete_basket_template(session_id: str, template_id: str) -> bool:
+    """
+    Delete a saved basket template.
+    
+    Args:
+        session_id: Session identifier
+        template_id: Template identifier
+        
+    Returns:
+        True if successful, False otherwise.
+    """
+    backend_url = get_backend_url()
+    
+    try:
+        response = requests.delete(
+            f"{backend_url}/api/basket/templates/{template_id}",
+            headers=_session_headers(session_id),
+            timeout=10
+        )
+        return response.status_code in (200, 204)
+    except requests.exceptions.RequestException:
+        return False
 

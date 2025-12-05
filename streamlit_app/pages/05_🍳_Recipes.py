@@ -26,133 +26,16 @@ from typing import List, Dict, Any, Optional
 from utils import recipes_data
 from utils.session import get_or_create_session_id
 from utils.api_client import search_products, add_to_cart_backend
-from utils.ui_components import render_header
-
-render_header("🍳 Recipes & Ideas", "Healthy inspiration for your next grocery basket")
-
-# Get session ID for basket operations (persists across page navigations)
-session_id = get_or_create_session_id()
-
-# Introduction
-st.markdown("""
-Discover delicious and healthy recipes that you can prepare with ingredients
-from Dutch supermarkets. Filter by meal type or dietary preferences to find
-your perfect meal inspiration! 🥗
-""")
-
-st.caption("💡 **Tip:** Start with one or two simple recipes and gradually build healthier habits. Small changes add up over time!")
-
-st.divider()
-
-# Filters section
-st.subheader("🔍 Filter Recipes")
-
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    meal_types = ["All"] + recipes_data.get_meal_types()
-    selected_meal_type = st.selectbox(
-        "Meal Type",
-        options=meal_types,
-        index=0,
-        help="Filter recipes by meal type"
-    )
-
-with col2:
-    tag_options = ["All"] + recipes_data.get_tag_options()
-    selected_tag = st.selectbox(
-        "Dietary Preference / Tag",
-        options=tag_options,
-        index=0,
-        help="Filter by tags like 'vegetarian', 'quick', 'high-protein', etc."
-    )
-
-with col3:
-    search_text = st.text_input(
-        "Search",
-        placeholder="Search recipes...",
-        help="Search in recipe titles and descriptions",
-        key="recipe_search"
-    )
-
-st.divider()
-
-# Get filtered recipes
-filtered_recipes = recipes_data.filter_recipes(
-    meal_type=selected_meal_type if selected_meal_type != "All" else None,
-    tag=selected_tag if selected_tag != "All" else None,
-    search_text=search_text if search_text and search_text.strip() else None
+from utils.profile import get_profile_by_key, HOUSEHOLD_PROFILES
+from ui.style import (
+    inject_global_css,
+    section_header,
+    pill_tag,
+    hero_banner,
+    image_card,
+    get_random_asset_image,
+    render_footer,
 )
-
-# Display results
-if not filtered_recipes:
-    st.warning("🔍 No recipes match your filters. Try adjusting them or clearing the text search.")
-    if st.button("Clear All Filters", type="secondary"):
-        st.session_state.recipe_search = ""
-        st.rerun()
-else:
-    # Show count
-    st.success(f"📚 Found {len(filtered_recipes)} recipe(s) matching your criteria")
-
-    st.divider()
-
-    # Display recipe cards
-    for recipe in filtered_recipes:
-        with st.container():
-            # Recipe card header
-            col_title, col_meta = st.columns([3, 1])
-            
-            with col_title:
-                st.subheader(f"🍽️ {recipe.title}")
-            
-            with col_meta:
-                st.caption(f"⏱️ {recipe.prep_time_minutes} min")
-            
-            # Description
-            st.markdown(f"*{recipe.description}*")
-            
-            # Metadata badges
-            col_badge1, col_badge2, col_badge3 = st.columns(3)
-            
-            with col_badge1:
-                st.caption(f"📅 **Meal:** {recipe.meal_type}")
-            
-            with col_badge2:
-                difficulty_emoji = "🟢" if recipe.difficulty == "Easy" else "🟡" if recipe.difficulty == "Medium" else "🔴"
-                st.caption(f"{difficulty_emoji} **Difficulty:** {recipe.difficulty}")
-            
-            with col_badge3:
-                tags_display = ", ".join(recipe.tags)
-                st.caption(f"🏷️ **Tags:** {tags_display}")
-            
-            # Expandable section for ingredients and instructions
-            with st.expander("📋 View Ingredients and Instructions", expanded=False):
-                # Ingredients section
-                st.markdown("### 🛒 Ingredients")
-                ingredients_list = "\n".join([f"• {ing}" for ing in recipe.ingredients])
-                st.markdown(ingredients_list)
-                
-                st.markdown("---")
-                
-                # Instructions section
-                st.markdown("### 👨‍🍳 Instructions")
-                for idx, instruction in enumerate(recipe.instructions, 1):
-                    st.markdown(f"**{idx}.** {instruction}")
-                
-                st.markdown("---")
-                
-                # "Add ingredients to basket" button
-                if st.button(
-                    "🛒 Add Ingredients to Basket",
-                    key=f"add_ingredients_{recipe.id}",
-                    use_container_width=True,
-                    type="primary"
-                ):
-                    handle_add_recipe_to_basket(recipe, session_id)
-            
-            st.divider()
-
-st.divider()
 
 
 def health_tag_to_score(health_tag: Optional[str]) -> float:
@@ -189,7 +72,7 @@ def pick_best_product_for_ingredient(
     
     Args:
         ingredient: Ingredient name to search for
-        retailers: Optional list of retailer codes (e.g., ["ah", "jumbo", "picnic"])
+        retailers: Optional list of retailer codes (e.g., ["ah", "jumbo", "picnic", "dirk"])
     
     Returns:
         Best product dict with fields like product_id, retailer, name, price_eur, etc.
@@ -327,7 +210,7 @@ def handle_add_recipe_to_basket(recipe: recipes_data.Recipe, session_id: str) ->
     
     if missing:
         st.success(
-            f"✅ Added {found_count} product(s) to your basket for **'{recipe.title}'**. "
+            f"✅ Added {found_count} product(s) for **'{recipe.title}'**. "
             f"Could not find matches for: {', '.join(missing[:5])}"
             + (f" (and {len(missing) - 5} more)" if len(missing) > 5 else "")
         )
@@ -336,55 +219,195 @@ def handle_add_recipe_to_basket(recipe: recipes_data.Recipe, session_id: str) ->
             f"✅ Added all {found_count} ingredient(s) for **'{recipe.title}'** to your basket!"
         )
     
+    # Show caption suggesting to check My Basket
+    st.caption("💡 Check **My Basket** in the sidebar to review your items.")
+    
     # Offer link to view basket
     col1, col2 = st.columns([3, 1])
     with col2:
-        if st.button("🧺 View My Basket", key=f"view_basket_{recipe.id}", use_container_width=True):
-            st.switch_page("pages/03_🧺_My_Basket.py")
+        try:
+            st.page_link("pages/03_🧺_My_Basket.py", label="🧺 View My Basket", icon="🧺")
+        except (AttributeError, TypeError):
+            # Fallback for older Streamlit versions
+            if st.button("🧺 View My Basket", key=f"view_basket_{recipe.id}", width='stretch'):
+                st.switch_page("pages/03_🧺_My_Basket.py")
 
 
-# Additional information section
-st.subheader("💡 Recipe Tips")
+# Inject global CSS styling
+inject_global_css()
 
-col1, col2 = st.columns(2)
+# Hero banner image
+hero_banner(slot_key="recipes_hero")
 
-with col1:
-    st.markdown("""
-    **🥗 Making Healthy Choices:**
-    - Start simple with recipes that have fewer ingredients
-    - Look for recipes tagged "quick" if you're short on time
-    - Meal-prep friendly recipes can save time during busy weeks
-    """)
+# Page header
+section_header(
+    title="Recipes for your household",
+    eyebrow="MEAL IDEAS",
+    help_text="Discover simple recipes and scale portions to match your household profile."
+)
 
-with col2:
-    st.markdown("""
-    **🛒 Shopping Smart:**
-    - Check ingredient lists before you shop
-    - Buy seasonal vegetables for better prices
-    - Consider batch cooking for meal-prep recipes
-    """)
+# Household profile context
+profile_key = st.session_state.get("household_profile_key")
+profile = HOUSEHOLD_PROFILES.get(profile_key) if profile_key else None
+if profile:
+    st.caption(f"Currently set to **{profile.label.lower()}** • we'll adjust servings by ~{profile.serving_multiplier}×.")
 
-st.divider()
+# Get session ID for basket operations (persists across page navigations)
+session_id = get_or_create_session_id()
 
-# Future enhancements section
-st.caption("""
-**🔮 Coming Soon:**
-- Add all recipe ingredients to basket with one click
-- Recipe ratings and reviews from the community
-- Meal planning calendar integration
-- Nutritional information per recipe
-- Estimated cost per serving based on current prices
-- Save favorite recipes to your profile
-- Share recipes with friends
-""")
+# Filters-on-left, cards-on-right layout
+filters_col, grid_col = st.columns([1, 3], gap="large")
 
-# TODO: Future enhancements:
-#   - Deep integration with Search & Compare: clicking "Find Ingredients" should
-#     navigate to Search & Compare with ingredients pre-populated
-#   - "Add Recipe to Meal Plan" functionality
-#   - Shopping list generation from selected recipes
-#   - Recipe cost estimation based on current product prices
-#   - User recipe submission and community features
-#   - Recipe dietary filters (vegan, gluten-free, etc.) as separate checkboxes
-#   - Recipe favorites/bookmarking
-#   - Recipe sharing functionality
+# Left column: Filters
+with filters_col:
+    st.caption("Filter recipes by ingredient, style, or prep time.")
+    
+    # Search text input
+    search_text = st.text_input(
+        "Search",
+        value=st.session_state.get("recipe_search", ""),
+        placeholder="e.g. pasta, curry, salad…",
+        key="recipe_search"
+    )
+    
+    # Meal type filter
+    meal_types = ["All"] + recipes_data.get_meal_types()
+    selected_meal_type = st.selectbox(
+        "Meal Type",
+        options=meal_types,
+        index=0,
+        help="Filter recipes by meal type"
+    )
+    
+    # Dietary preference filter
+    tag_options = ["All"] + recipes_data.get_tag_options()
+    selected_tag = st.selectbox(
+        "Dietary Preference / Tag",
+        options=tag_options,
+        index=0,
+        help="Filter by tags like 'vegetarian', 'quick', 'high-protein', etc."
+    )
+    
+    st.markdown("---")
+    image_card("recipes_side", caption="Inspiration for simple, healthy meals.")
+
+# Get filtered recipes (same logic as before)
+filtered_recipes = recipes_data.filter_recipes(
+    meal_type=selected_meal_type if selected_meal_type != "All" else None,
+    tag=selected_tag if selected_tag != "All" else None,
+    search_text=search_text if search_text and search_text.strip() else None
+)
+
+# Check if search/filters have been applied
+has_searched = (selected_meal_type != "All" or selected_tag != "All" or (search_text and search_text.strip()))
+
+# Right column: Recipe cards grid
+with grid_col:
+    if not has_searched:
+        st.info(
+            "Search for an ingredient or dish to see recipe ideas.\n\n"
+            "Tip: Start with something you already buy, like **\"pasta\"**, "
+            "**\"kipfilet\"** or **\"linzen\"**."
+        )
+        st.stop()
+    
+    if has_searched and not filtered_recipes:
+        st.warning(
+            "We didn't find recipes for this search. Try a broader term or relax your filters."
+        )
+        st.stop()
+    
+    # Recipe ideas grid
+    st.markdown("### Recipe ideas")
+    st.caption("Tap a recipe to see details and add ingredients to your basket.")
+    
+    grid_cols = st.columns(2, gap="large")
+    
+    for idx, recipe in enumerate(filtered_recipes):
+        col = grid_cols[idx % 2]
+        
+        with col:
+            # Use a stable random image from assets for each card
+            slot_key = f"recipe_card_{idx}"
+            image_path = get_random_asset_image(slot_key)
+            
+            st.markdown('<div class="nlga-card">', unsafe_allow_html=True)
+            
+            if image_path:
+                st.markdown('<div class="nlga-recipe-card">', unsafe_allow_html=True)
+                st.image(image_path, use_container_width=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+            
+            # Title
+            st.markdown(f"#### {recipe.title}")
+            
+            # Tags row
+            tags = getattr(recipe, "tags", None) or []
+            if tags:
+                tag_cols = st.columns(min(len(tags), 3))
+                for t_idx, tag in enumerate(tags[:3]):
+                    with tag_cols[t_idx]:
+                        st.markdown(pill_tag(str(tag)), unsafe_allow_html=True)
+            
+            # Meta info row
+            meta_cols = st.columns(3)
+            
+            with meta_cols[0]:
+                if getattr(recipe, "prep_time_minutes", None) is not None:
+                    st.caption(f"⏱️ ~{recipe.prep_time_minutes} min")
+            
+            with meta_cols[1]:
+                if getattr(recipe, "servings", None) is not None:
+                    st.caption(f"👨‍👩‍👧‍👦 Base: {recipe.servings} servings")
+                else:
+                    st.caption(f"👨‍👩‍👧‍👦 Base: 2 servings")
+            
+            with meta_cols[2]:
+                if getattr(recipe, "health_label", None):
+                    st.caption(f"🥦 {recipe.health_label}")
+            
+            # Expandable details area
+            with st.expander("View details & add to basket"):
+                # Description
+                if getattr(recipe, "description", None):
+                    st.markdown(recipe.description)
+                
+                # Ingredients section
+                st.markdown("### 🛒 Ingredients")
+                ingredients_list = "\n".join([f"• {ing}" for ing in recipe.ingredients])
+                st.markdown(ingredients_list)
+                
+                st.markdown("---")
+                
+                # Instructions section
+                st.markdown("### 👨‍🍳 Instructions")
+                for inst_idx, instruction in enumerate(recipe.instructions, 1):
+                    st.markdown(f"**{inst_idx}.** {instruction}")
+                
+                st.markdown("---")
+                
+                # Household-aware serving hint
+                profile_key_current = st.session_state.get("household_profile_key")
+                profile_current = get_profile_by_key(profile_key_current)
+                if profile_current and hasattr(recipe, "servings") and recipe.servings:
+                    adjusted_servings = int(recipe.servings * profile_current.serving_multiplier)
+                    st.caption(f"For your household: ~{adjusted_servings} servings")
+                elif profile_current:
+                    # Use default base servings if recipe doesn't have servings field
+                    base_servings_default = 2
+                    adjusted_servings = int(base_servings_default * profile_current.serving_multiplier)
+                    st.caption(f"For your household: ~{adjusted_servings} servings")
+                
+                # Add ingredients to basket button
+                if st.button(
+                    "🛒 Add ingredients to basket",
+                    key=f"add_ingredients_{recipe.id}",
+                    width='stretch',
+                    type="primary"
+                ):
+                    handle_add_recipe_to_basket(recipe, session_id)
+            
+            st.markdown('</div>', unsafe_allow_html=True)
+
+# Footer
+render_footer()

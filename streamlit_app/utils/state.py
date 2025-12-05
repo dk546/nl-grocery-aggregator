@@ -8,7 +8,7 @@ in st.session_state.
 Each basket item is a dictionary with:
 - `id`: unique string identifier for the item (generated from product_id + retailer, or synthetic)
 - `name`: product name
-- `retailer`: retailer code (ah, jumbo, picnic)
+- `retailer`: retailer code (ah, jumbo, picnic, dirk)
 - `price`: numeric price in euros
 - `price_eur`: alias for price (for backward compatibility)
 - `unit_price`: optional numeric unit price

@@ -25,17 +25,41 @@ import pandas as pd
 import streamlit as st
 
 
-def render_header(title: str, subtitle: Optional[str] = None) -> None:
+def render_header(title: str, subtitle: Optional[str] = None, show_basket_link: bool = True) -> None:
     """
-    Render a consistent page header with title and optional subtitle.
+    Render a consistent page header with title, optional subtitle, and optional basket link.
     
     Args:
         title: Main page title (can include emoji)
         subtitle: Optional subtitle text displayed below title
+        show_basket_link: If True, show a link to My Basket page in the header (default: True)
     """
-    st.title(title)
-    if subtitle:
-        st.caption(subtitle)
+    # Create columns for title area and actions
+    if show_basket_link:
+        col_title, col_actions = st.columns([3, 1])
+        
+        with col_title:
+            st.title(title)
+            if subtitle:
+                st.caption(subtitle)
+        
+        with col_actions:
+            # Use st.page_link if available (Streamlit >= 1.28.0), otherwise show info
+            try:
+                st.page_link(
+                    "pages/03_🧺_My_Basket.py",
+                    label="View My Basket",
+                    icon="🧺",
+                )
+            except (AttributeError, TypeError):
+                # Fallback for older Streamlit versions
+                st.caption("🧺 Use sidebar to view My Basket")
+    else:
+        # No action column if basket link is disabled
+        st.title(title)
+        if subtitle:
+            st.caption(subtitle)
+    
     st.divider()
 
 
@@ -312,7 +336,7 @@ def render_product_table(df: pd.DataFrame, show_selection: bool = False) -> Opti
     # Configure retailer with badge styling
     column_config["retailer"] = st.column_config.TextColumn(
         "Retailer",
-        help="Retailer: AH, Jumbo, or Picnic"
+        help="Retailer: Albert Heijn, Jumbo, Picnic, or Dirk"
     )
     
     # Configure health column with color hints
@@ -347,7 +371,7 @@ def render_product_table(df: pd.DataFrame, show_selection: bool = False) -> Opti
         selected_rows = st.dataframe(
             display_df[display_columns],
             column_config=column_config,
-            use_container_width=True,
+            width='stretch',
             on_select="rerun",
             selection_mode="multi-index" if len(display_df) > 0 else "single-row"
         )
@@ -357,7 +381,7 @@ def render_product_table(df: pd.DataFrame, show_selection: bool = False) -> Opti
         st.dataframe(
             display_df[display_columns],
             column_config=column_config,
-            use_container_width=True,
+            width='stretch',
             hide_index=True
         )
         return None

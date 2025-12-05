@@ -256,8 +256,16 @@ class PicnicConnector(BaseConnector):
                 promo_text = None
                 if is_promotion:
                     promo_text = item.get("discount") or item.get("promotion")
-                    if isinstance(promo_text, dict):
-                        promo_text = str(promo_text)
+                    # Convert to string if it's not already (handles dict, float, int, etc.)
+                    if promo_text is not None:
+                        if isinstance(promo_text, dict):
+                            promo_text = str(promo_text)
+                        elif not isinstance(promo_text, str):
+                            # Convert numeric types (float, int) and other types to string
+                            promo_text = str(promo_text)
+                        # If empty string, set to None
+                        if promo_text == "":
+                            promo_text = None
 
                 product_internal = ProductInternal(
                     id=product_id,

@@ -1,27 +1,15 @@
 # Streamlit Theme Configuration for NL Grocery Aggregator
+# Inspired by freasy.nl: fresh, healthy, light design
 # 
-# This theme creates a "healthy lifestyle" vibe with:
-# - Calm green primary color (representing fresh, healthy choices)
-# - Light, clean backgrounds for easy reading
-# - Soft, modern sans-serif font
-# - Subtle use of colors to avoid harsh visuals
-#
 # Design intent:
-# - Primary green (#3BAA4A) suggests freshness and health
-# - Light grey background reduces eye strain
-# - White secondary background creates clear content separation
-# - Dark text ensures good readability
-#
-# To customize further:
-# - Adjust primaryColor for brand alignment
-# - Modify backgroundColor for different moods (warmer/cooler tones)
-# - Change font to "serif" for a more traditional feel
-# - Use backgroundColor="#FFFFFF" for pure white background
+# - Soft mint/teal tones for a fresh, healthy feel
+# - Warm off-white background for comfort
+# - Rounded, friendly UI elements
+# - Clean, modern typography
 
 [theme]
-primaryColor = "#3BAA4A"              # Calm green for healthy choices
-backgroundColor = "#F7F7F7"            # Light grey for reduced eye strain
-secondaryBackgroundColor = "#FFFFFF"   # White for content cards
-textColor = "#222222"                  # Dark grey for readability
-font = "sans serif"                    # Modern, clean font
-
+primaryColor = "#0C8A7B"              # Soft teal/mint primary
+backgroundColor = "#FFF9F1"            # Warm off-white background
+secondaryBackgroundColor = "#E5F4F1"   # Very light mint for cards
+textColor = "#123840"                  # Dark teal/charcoal for text
+font = "sans serif"                    # Modern sans-serif font

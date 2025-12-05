@@ -8,6 +8,7 @@ This module provides the core search aggregation functionality that:
 - Merges and sorts results based on the specified sort criteria
 - Filters by health tag if requested
 - Groups products by name and marks the cheapest in each group
+- Caches results with TTL to reduce redundant API calls
 
 The aggregated_search function is the main entry point for product searches
 in the aggregator system, unifying results from AH, Jumbo, and Picnic.
@@ -21,10 +22,16 @@ from typing import List, Dict, Any, Optional
 from aggregator.models import ProductInternal, ProductPublic
 from aggregator.health import tag_health
 from aggregator.comparison import mark_cheapest, sort_products
+from aggregator.utils.cache import (
+    make_search_cache_key,
+    get_cached_search,
+    set_cached_search,
+)
 
 from .connectors.ah_connector import AHConnector
 from .connectors.jumbo_connector import JumboConnector
 from .connectors.picnic_connector import PicnicConnector, PicnicAuthError
+from .connectors.dirk_connector import DirkConnector
 
 # Set up logger for search pipeline debugging
 logger = logging.getLogger(__name__)
@@ -38,6 +45,7 @@ def _get_connector_map():
         "ah": AHConnector,
         "jumbo": JumboConnector,
         "picnic": PicnicConnector,
+        "dirk": DirkConnector,
     }
 
 # Health tag priority for sorting (higher number = sorted later)
@@ -112,7 +120,7 @@ def group_by_name_and_mark_cheapest(products: List[ProductPublic]) -> List[Produ
     return result
 
 
-def aggregated_search(
+def _aggregated_search_uncached(
     query: str,
     retailers: List[str],
     size_per_retailer: int = 10,
@@ -450,3 +458,67 @@ def aggregated_search(
         "results": results,
         "connectors_status": connector_status
     }
+
+
+def aggregated_search(
+    query: str,
+    retailers: List[str],
+    size_per_retailer: int = 10,
+    page: int = 0,
+    sort_by: Optional[str] = None,
+    health_filter: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Perform an aggregated search across multiple retailers with caching.
+    
+    This is the main entry point that wraps _aggregated_search_uncached with a TTL cache.
+    Cache key is based on all search parameters to ensure correctness.
+    
+    Args:
+        query: Search query string (e.g., "melk", "brood")
+        retailers: List of retailer identifiers to search (e.g., ["ah", "jumbo", "picnic"])
+        size_per_retailer: Number of results to fetch from each retailer (default: 10)
+        page: Page number for pagination (0-indexed, default: 0)
+        sort_by: Sort criterion - "price", "retailer", or "health" (default: None, preserves order)
+        health_filter: Optional filter for health tag - "healthy" or "unhealthy" (default: None)
+        
+    Returns:
+        Dictionary containing:
+        - results: List of product dictionaries
+        - connectors_status: Dictionary mapping retailer names to status strings
+        
+    See _aggregated_search_uncached() docstring for detailed return format.
+    """
+    # Create cache key from all parameters
+    cache_key = make_search_cache_key(
+        query=query,
+        retailers=retailers,
+        size=size_per_retailer,
+        page=page,
+        sort_by=sort_by,
+        health_filter=health_filter,
+    )
+    
+    # Check cache first
+    cached_result = get_cached_search(cache_key)
+    if cached_result is not None:
+        logger.debug("Cache hit for query=%r retailers=%r", query, retailers)
+        return cached_result
+    
+    # Cache miss - perform actual search
+    logger.debug("Cache miss for query=%r retailers=%r - performing search", query, retailers)
+    result = _aggregated_search_uncached(
+        query=query,
+        retailers=retailers,
+        size_per_retailer=size_per_retailer,
+        page=page,
+        sort_by=sort_by,
+        health_filter=health_filter,
+    )
+    
+    # Cache successful results (only cache if we got a valid response)
+    if result is not None and isinstance(result, dict) and "results" in result:
+        set_cached_search(cache_key, result)
+        logger.debug("Cached search result for query=%r retailers=%r", query, retailers)
+    
+    return result

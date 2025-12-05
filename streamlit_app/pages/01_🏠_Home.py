@@ -17,12 +17,17 @@ import streamlit as st
 
 from utils.api_client import get_health_status
 from utils.ui_components import render_header, render_backend_status, render_feature_card
+from utils.sponsored_data import get_sponsored_deals_for_search
+from utils.retailers import get_retailer_display_name
 
-render_header("🏠 Home", "Welcome to the NL Grocery Health Companion")
+render_header(
+    "🏠 Home",
+    "Your smart Dutch grocery assistant – search, compare, and shop healthier."
+)
 
 # Introduction
 st.markdown("""
-This application helps you compare grocery prices across **Albert Heijn**, **Jumbo**, and **Picnic**
+This application helps you compare grocery prices across **Albert Heijn**, **Jumbo**, **Picnic**, and **Dirk**
 while nudging you towards healthier choices through automatic health tagging.
 """)
 
@@ -80,6 +85,43 @@ Products are automatically tagged as **healthy**, **unhealthy**, or **neutral** 
 their nutritional information. These tags are approximations and should not be considered
 medical advice. Always check product labels for detailed nutritional information.
 """)
+
+# Sponsored spotlight (demo)
+st.divider()
+st.markdown("### ⭐ Sponsored spotlight (demo)")
+
+# For home, just fetch top deals without query
+home_sponsored = get_sponsored_deals_for_search(query=None, retailer_codes=None, max_deals=2)
+
+if home_sponsored:
+    cols = st.columns(len(home_sponsored))
+    for col, deal in zip(cols, home_sponsored):
+        with col:
+            with st.container(border=True):
+                st.markdown("**⭐ Sponsored**")
+                st.markdown(f"**{deal.title}**")
+                st.markdown(f"**€{deal.price_eur:.2f}**")
+                st.caption(deal.promo_text)
+                
+                retailer_label = get_retailer_display_name(deal.retailer)
+                
+                st.caption(f"🛒 {retailer_label}")
+                
+                if deal.product_url:
+                    st.link_button(
+                        "View product",
+                        url=deal.product_url,
+                        width='stretch',
+                    )
+                else:
+                    st.button(
+                        "View product",
+                        disabled=True,
+                        width='stretch',
+                        key=f"home_sponsored_{deal.id}",
+                    )
+else:
+    st.caption("Sponsored slots appear here when configured.")
 
 # Important disclaimer
 st.divider()

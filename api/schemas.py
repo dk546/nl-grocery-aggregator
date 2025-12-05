@@ -185,4 +185,127 @@ class CartView(BaseModel):
     )
 
 
+class SavingsProduct(BaseModel):
+    """Product model for savings suggestions (current or alternative)."""
+    retailer: str = Field(..., description="Retailer identifier")
+    product_id: str = Field(..., description="Product identifier")
+    name: str = Field(..., description="Product name")
+    price_eur: float = Field(..., ge=0, description="Price per unit in euros")
+    price_per_unit: Optional[float] = Field(None, ge=0, description="Price per canonical unit (if available)")
+    quantity: Optional[int] = Field(None, ge=1, description="Quantity (for current items only)")
+    line_total: Optional[float] = Field(None, ge=0, description="Total line total (for current items only)")
+    image_url: Optional[str] = Field(None, description="Product image URL")
+    health_tag: Optional[str] = Field(None, description="Health category tag")
+
+
+class SavingsSuggestion(BaseModel):
+    """A single savings suggestion showing a cheaper alternative."""
+    current: SavingsProduct = Field(..., description="Current basket item")
+    alternative: SavingsProduct = Field(..., description="Cheaper alternative product")
+    estimated_line_total: float = Field(..., ge=0, description="Estimated total if alternative is used")
+    estimated_savings: float = Field(..., ge=0, description="Estimated savings (current line_total - estimated_line_total)")
+
+
+class BasketSavingsResponse(BaseModel):
+    """Response model for basket savings analysis."""
+    potential_savings_total: float = Field(..., ge=0, description="Total potential savings across all suggestions")
+    suggestions: List[SavingsSuggestion] = Field(..., description="List of savings suggestions")
+    
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "potential_savings_total": 2.50,
+                "suggestions": [
+                    {
+                        "current": {
+                            "retailer": "ah",
+                            "product_id": "12345",
+                            "name": "Melk",
+                            "price_eur": 2.50,
+                            "price_per_unit": 2.50,
+                            "quantity": 2,
+                            "line_total": 5.00,
+                            "health_tag": "neutral"
+                        },
+                        "alternative": {
+                            "retailer": "jumbo",
+                            "product_id": "67890",
+                            "name": "Melk",
+                            "price_eur": 2.25,
+                            "price_per_unit": 2.25,
+                            "health_tag": "neutral"
+                        },
+                        "estimated_line_total": 4.50,
+                        "estimated_savings": 0.50
+                    }
+                ]
+            }
+        }
+    )
+
+
+class BasketTemplateItem(BaseModel):
+    """Item model for basket templates (reuses CartItem structure)."""
+    retailer: str = Field(..., description="Retailer identifier")
+    product_id: str = Field(..., description="Product identifier")
+    name: str = Field(..., description="Product name")
+    price_eur: float = Field(..., ge=0, description="Price per unit in euros")
+    quantity: int = Field(..., ge=1, description="Quantity")
+    line_total: Optional[float] = Field(None, ge=0, description="Line total (optional, can be calculated)")
+    health_tag: Optional[str] = Field(None, description="Health category tag")
+    image_url: Optional[str] = Field(None, description="Product image URL")
+
+
+class BasketTemplate(BaseModel):
+    """Model for a saved basket template."""
+    id: str = Field(..., description="Template identifier")
+    name: str = Field(..., description="Template name")
+    created_at: float = Field(..., description="Creation timestamp (Unix time)")
+    items: List[BasketTemplateItem] = Field(..., description="List of basket items in the template")
+    
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "id": "123e4567-e89b-12d3-a456-426614174000",
+                "name": "Weekly groceries",
+                "created_at": 1703875200.0,
+                "items": [
+                    {
+                        "retailer": "ah",
+                        "product_id": "12345",
+                        "name": "Melk",
+                        "price_eur": 1.99,
+                        "quantity": 2,
+                        "line_total": 3.98,
+                        "health_tag": "neutral"
+                    }
+                ]
+            }
+        }
+    )
+
+
+class BasketTemplateListResponse(BaseModel):
+    """Response model for listing basket templates."""
+    templates: List[BasketTemplate] = Field(..., description="List of saved basket templates")
+
+
+class SaveBasketTemplateRequest(BaseModel):
+    """Request model for saving a basket template."""
+    name: str = Field(..., min_length=1, description="Template name")
+    
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "name": "Weekly groceries"
+            }
+        }
+    )
+
+
+class SaveBasketTemplateResponse(BaseModel):
+    """Response model for saving a basket template."""
+    template: BasketTemplate = Field(..., description="Saved template")
+
+
 
