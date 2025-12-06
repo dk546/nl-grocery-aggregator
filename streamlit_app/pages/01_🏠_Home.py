@@ -76,8 +76,6 @@ with col3:
         emoji="🍳"
     )
 
-st.divider()
-
 # Health tagging info
 st.subheader("🥦 Health Tagging")
 st.info("""
@@ -87,7 +85,6 @@ medical advice. Always check product labels for detailed nutritional information
 """)
 
 # Sponsored spotlight (demo)
-st.divider()
 st.markdown("### ⭐ Sponsored spotlight (demo)")
 
 # For home, just fetch top deals without query

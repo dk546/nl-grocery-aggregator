@@ -31,7 +31,6 @@ from ui.style import (
     inject_global_css,
     section_header,
     pill_tag,
-    hero_banner,
     image_card,
     get_random_asset_image,
     render_footer,
@@ -236,21 +235,19 @@ def handle_add_recipe_to_basket(recipe: recipes_data.Recipe, session_id: str) ->
 # Inject global CSS styling
 inject_global_css()
 
-# Hero banner image
-hero_banner(slot_key="recipes_hero")
-
 # Page header
 section_header(
-    title="Recipes for your household",
-    eyebrow="MEAL IDEAS",
-    help_text="Discover simple recipes and scale portions to match your household profile."
+    title="Recipes & ideas",
+    eyebrow="MEAL INSPIRATION",
+    help_text="Quick, simple recipes tailored to your household size."
 )
 
-# Household profile context
+# Household caption (optional)
 profile_key = st.session_state.get("household_profile_key")
-profile = HOUSEHOLD_PROFILES.get(profile_key) if profile_key else None
-if profile:
-    st.caption(f"Currently set to **{profile.label.lower()}** • we'll adjust servings by ~{profile.serving_multiplier}×.")
+if profile_key:
+    profile = HOUSEHOLD_PROFILES.get(profile_key)
+    if profile:
+        st.caption(f"Showing ideas suitable for a **{profile.label.lower()}** household.")
 
 # Get session ID for basket operations (persists across page navigations)
 session_id = get_or_create_session_id()
@@ -260,7 +257,7 @@ filters_col, grid_col = st.columns([1, 3], gap="large")
 
 # Left column: Filters
 with filters_col:
-    st.caption("Filter recipes by ingredient, style, or prep time.")
+    st.markdown("### Filters")
     
     # Search text input
     search_text = st.text_input(
@@ -288,8 +285,7 @@ with filters_col:
         help="Filter by tags like 'vegetarian', 'quick', 'high-protein', etc."
     )
     
-    st.markdown("---")
-    image_card("recipes_side", caption="Inspiration for simple, healthy meals.")
+    st.caption("Filter by ingredient, diet, time or style.")
 
 # Get filtered recipes (same logic as before)
 filtered_recipes = recipes_data.filter_recipes(
@@ -304,87 +300,84 @@ has_searched = (selected_meal_type != "All" or selected_tag != "All" or (search_
 # Right column: Recipe cards grid
 with grid_col:
     if not has_searched:
-        st.info(
-            "Search for an ingredient or dish to see recipe ideas.\n\n"
-            "Tip: Start with something you already buy, like **\"pasta\"**, "
-            "**\"kipfilet\"** or **\"linzen\"**."
-        )
+        st.info("""
+Search for a dish or ingredient to get recipe ideas.
+
+Try **pasta**, **kipfilet**, or **havermout**.
+
+""")
         st.stop()
     
     if has_searched and not filtered_recipes:
-        st.warning(
-            "We didn't find recipes for this search. Try a broader term or relax your filters."
-        )
+        st.warning("No recipes found. Try adjusting your filters.")
         st.stop()
     
     # Recipe ideas grid
     st.markdown("### Recipe ideas")
-    st.caption("Tap a recipe to see details and add ingredients to your basket.")
+    st.caption("Tap a recipe to see full details and add its ingredients to your basket.")
     
-    grid_cols = st.columns(2, gap="large")
+    # Two-column card grid
+    cols = st.columns(2, gap="large")
     
     for idx, recipe in enumerate(filtered_recipes):
-        col = grid_cols[idx % 2]
+        col = cols[idx % 2]
         
         with col:
-            # Use a stable random image from assets for each card
-            slot_key = f"recipe_card_{idx}"
-            image_path = get_random_asset_image(slot_key)
+            image_path = get_random_asset_image(f"recipe_{idx}")
             
-            st.markdown('<div class="nlga-card">', unsafe_allow_html=True)
+            st.markdown('<div class="nlga-card nlga-recipe-card">', unsafe_allow_html=True)
             
+            # Image
             if image_path:
-                st.markdown('<div class="nlga-recipe-card">', unsafe_allow_html=True)
+                st.markdown('<div class="nlga-recipe-image">', unsafe_allow_html=True)
                 st.image(image_path, use_container_width=True)
                 st.markdown('</div>', unsafe_allow_html=True)
             
             # Title
             st.markdown(f"#### {recipe.title}")
             
-            # Tags row
-            tags = getattr(recipe, "tags", None) or []
-            if tags:
-                tag_cols = st.columns(min(len(tags), 3))
-                for t_idx, tag in enumerate(tags[:3]):
-                    with tag_cols[t_idx]:
-                        st.markdown(pill_tag(str(tag)), unsafe_allow_html=True)
+            # Tags (diet, time, cuisine — use whatever your recipe objects have)
+            tag_row = st.columns(3)
             
-            # Meta info row
-            meta_cols = st.columns(3)
+            with tag_row[0]:
+                if getattr(recipe, "prep_time_minutes", None):
+                    st.caption(f"⏱ {recipe.prep_time_minutes} min")
             
-            with meta_cols[0]:
-                if getattr(recipe, "prep_time_minutes", None) is not None:
-                    st.caption(f"⏱️ ~{recipe.prep_time_minutes} min")
-            
-            with meta_cols[1]:
-                if getattr(recipe, "servings", None) is not None:
-                    st.caption(f"👨‍👩‍👧‍👦 Base: {recipe.servings} servings")
+            with tag_row[1]:
+                if getattr(recipe, "servings", None):
+                    st.caption(f"🍽 {recipe.servings} servings")
                 else:
-                    st.caption(f"👨‍👩‍👧‍👦 Base: 2 servings")
+                    st.caption(f"🍽 2 servings")
             
-            with meta_cols[2]:
-                if getattr(recipe, "health_label", None):
-                    st.caption(f"🥦 {recipe.health_label}")
+            with tag_row[2]:
+                tags = getattr(recipe, "tags", None) or []
+                if tags:
+                    # Show first tag as pill if available
+                    st.markdown(pill_tag(str(tags[0])), unsafe_allow_html=True)
+                elif getattr(recipe, "diet", None):
+                    st.markdown(pill_tag(str(recipe.diet)), unsafe_allow_html=True)
             
-            # Expandable details area
-            with st.expander("View details & add to basket"):
+            # Expandable details
+            with st.expander("View recipe"):
                 # Description
                 if getattr(recipe, "description", None):
                     st.markdown(recipe.description)
                 
-                # Ingredients section
-                st.markdown("### 🛒 Ingredients")
+                st.markdown("---")
+                
+                # Ingredients (reuse your existing loop / table)
+                st.markdown("### Ingredients")
                 ingredients_list = "\n".join([f"• {ing}" for ing in recipe.ingredients])
                 st.markdown(ingredients_list)
                 
                 st.markdown("---")
                 
                 # Instructions section
-                st.markdown("### 👨‍🍳 Instructions")
-                for inst_idx, instruction in enumerate(recipe.instructions, 1):
-                    st.markdown(f"**{inst_idx}.** {instruction}")
-                
-                st.markdown("---")
+                if hasattr(recipe, "instructions") and recipe.instructions:
+                    st.markdown("### 👨‍🍳 Instructions")
+                    for inst_idx, instruction in enumerate(recipe.instructions, 1):
+                        st.markdown(f"**{inst_idx}.** {instruction}")
+                    st.markdown("---")
                 
                 # Household-aware serving hint
                 profile_key_current = st.session_state.get("household_profile_key")
@@ -398,9 +391,9 @@ with grid_col:
                     adjusted_servings = int(base_servings_default * profile_current.serving_multiplier)
                     st.caption(f"For your household: ~{adjusted_servings} servings")
                 
-                # Add ingredients to basket button
+                # Serving scale controls + Add to basket button
                 if st.button(
-                    "🛒 Add ingredients to basket",
+                    f"Add ingredients to basket ({recipe.title})",
                     key=f"add_ingredients_{recipe.id}",
                     width='stretch',
                     type="primary"

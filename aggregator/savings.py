@@ -12,6 +12,7 @@ from the TTL cache.
 """
 
 import logging
+from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -19,6 +20,17 @@ logger = logging.getLogger(__name__)
 # Minimum price difference to consider a suggestion (in euros per unit)
 # This avoids noise from tiny price differences
 MIN_PRICE_DIFFERENCE_PER_UNIT = 0.01  # 1 cent minimum
+
+
+@dataclass
+class SavingsSuggestion:
+    """A single savings opportunity suggestion."""
+    type: str  # e.g., "cheaper_alternative", "healthier_alternative"
+    current_item_name: str
+    alternative_item_name: str
+    savings_amount: float | None = None
+    health_delta: str | None = None
+    title: str | None = None
 
 
 def find_basket_savings(
@@ -134,7 +146,7 @@ def _find_cheaper_alternative(
     try:
         search_results = search_fn(
             query=current_name,
-            retailers=["ah", "jumbo", "picnic"],  # Search all retailers
+            retailers=["ah", "jumbo", "picnic", "dirk"],  # Search all retailers
             size_per_retailer=20,
             page=0,
             sort_by="price_per_unit_asc",  # Prefer per-unit price comparison
@@ -247,4 +259,118 @@ def _find_cheaper_alternative(
         "estimated_line_total": round(estimated_line_total, 2),
         "estimated_savings": round(estimated_savings, 2),
     }
+
+
+def get_savings_opportunities_for_basket(basket_items: List[Dict[str, Any]]) -> list[SavingsSuggestion]:
+    """
+    Compute a small list of savings opportunities for the given basket items.
+    
+    Non-invasive: read-only view, does not mutate the cart.
+    
+    Args:
+        basket_items: List of basket item dictionaries from the cart
+        
+    Returns:
+        List of SavingsSuggestion objects, limited to top 5 suggestions
+    """
+    try:
+        from aggregator.search import aggregated_search
+        
+        if not basket_items:
+            return []
+        
+        # Find savings using existing logic
+        savings_result = find_basket_savings(basket_items, aggregated_search)
+        
+        suggestions_raw = savings_result.get("suggestions", [])
+        
+        # Convert to SavingsSuggestion objects
+        suggestions = []
+        for s in suggestions_raw[:5]:  # Limit to top 5
+            current = s.get("current", {})
+            alternative = s.get("alternative", {})
+            
+            # Determine type based on health delta
+            current_health = current.get("health_tag")
+            alt_health = alternative.get("health_tag")
+            
+            suggestion_type = "cheaper_alternative"
+            health_delta_str = None
+            
+            if current_health and alt_health:
+                if current_health == "unhealthy" and alt_health in ("healthy", "neutral"):
+                    suggestion_type = "healthier_alternative"
+                    health_delta_str = f"Improve from {current_health} to {alt_health}"
+                elif current_health == "neutral" and alt_health == "healthy":
+                    suggestion_type = "healthier_alternative"
+                    health_delta_str = f"Improve from {current_health} to {alt_health}"
+            
+            # Build title
+            savings_amount = s.get("estimated_savings", 0.0)
+            title = f"Save €{savings_amount:.2f}"
+            if health_delta_str:
+                title += f" & improve health"
+            
+            suggestion = SavingsSuggestion(
+                type=suggestion_type,
+                current_item_name=current.get("name", "Current item"),
+                alternative_item_name=alternative.get("name", "Alternative item"),
+                savings_amount=savings_amount,
+                health_delta=health_delta_str,
+                title=title,
+            )
+            suggestions.append(suggestion)
+        
+        return suggestions
+        
+    except Exception as e:
+        # Fail quietly - suggestions are a nice-to-have
+        logger.debug("Error computing savings opportunities: %s", str(e), exc_info=True)
+        return []
+
+
+def get_savings_opportunities_for_session(session_id: str) -> list[SavingsSuggestion]:
+    """
+    Compute a small list of savings opportunities for the current basket.
+    
+    Non-invasive: read-only view, does not mutate the cart.
+    
+    Args:
+        session_id: Session identifier for the cart
+        
+    Returns:
+        List of SavingsSuggestion objects, limited to top 5 suggestions
+    """
+    try:
+        # Import here to avoid circular dependencies
+        from aggregator.cart import get_cart
+        
+        # Get cart for session
+        cart = get_cart(session_id)
+        
+        if not cart.items:
+            return []
+        
+        # Convert cart items to list of dicts for find_basket_savings
+        basket_items = []
+        for cart_item in cart.items.values():
+            item_dict = {
+                "retailer": cart_item.retailer,
+                "product_id": cart_item.product_id,
+                "name": cart_item.name,
+                "price_eur": cart_item.price_eur,
+                "quantity": cart_item.quantity,
+                "line_total": cart_item.total_price,
+                "image_url": cart_item.image_url,
+                "health_tag": cart_item.health_tag,
+            }
+            basket_items.append(item_dict)
+        
+        # Use the basket-based helper
+        return get_savings_opportunities_for_basket(basket_items)
+        
+    except Exception as e:
+        # Fail quietly - suggestions are a nice-to-have
+        logger.debug("Error computing savings opportunities: %s", str(e), exc_info=True)
+        return []
 

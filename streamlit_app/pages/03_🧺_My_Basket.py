@@ -36,7 +36,7 @@ from utils.api_client import (
     apply_basket_template,
     delete_basket_template,
 )
-from utils.profile import get_profile_by_key
+from utils.profile import HOUSEHOLD_PROFILES, get_profile_by_key
 from utils.retailers import get_retailer_display_name
 from ui.style import inject_global_css, section_header, pill_tag, image_card, render_footer
 
@@ -88,10 +88,11 @@ neutral_count = summary["count_items"] - healthy_count - unhealthy_count
 
 # Household profile context (for later use)
 profile_key = st.session_state.get("household_profile_key")
-profile = get_profile_by_key(profile_key)
+profile = HOUSEHOLD_PROFILES.get(profile_key) if profile_key else None
+weekly_budget = profile.typical_weekly_budget_hint if profile and profile.typical_weekly_budget_hint else None
 
-# Top metrics band
-metrics_cols = st.columns([1, 1, 1, 1], gap="large")
+# Top metrics band (now with 5 columns for budget)
+metrics_cols = st.columns([1, 1, 1, 1, 1], gap="large")
 
 with metrics_cols[0]:
     st.metric("Items", summary["count_items"])
@@ -104,6 +105,20 @@ with metrics_cols[2]:
 
 with metrics_cols[3]:
     st.metric("Healthy items", healthy_count)
+
+with metrics_cols[4]:
+    if weekly_budget:
+        basket_total = summary['total_price']
+        used_ratio = basket_total / weekly_budget
+        used_pct = min(used_ratio * 100, 999)
+        st.metric("Weekly budget used", f"{used_pct:.0f}%")
+    else:
+        st.metric("Weekly budget used", "—")
+
+if weekly_budget and profile:
+    st.caption(
+        f"Based on a typical weekly budget of ~€{weekly_budget:.0f} for your **{profile.label.lower()}** household."
+    )
 
 st.divider()
 
@@ -337,6 +352,69 @@ with main_col:
 # Side column: retailer totals, savings, templates, insights
 with side_col:
     image_card("basket_side", caption="Turn this basket into simple, balanced meals.")
+    
+    # Smart Suggestions card
+    suggestions = []
+    try:
+        from aggregator.savings import get_savings_opportunities_for_basket
+        
+        # Prepare basket items in the format expected by the savings helper
+        basket_items_for_savings = []
+        for item in basket:
+            item_dict = {
+                "retailer": item.get("retailer", ""),
+                "product_id": item.get("product_id", ""),
+                "name": item.get("name", ""),
+                "price_eur": float(item.get("price_eur", item.get("price", 0.0))),
+                "quantity": int(item.get("quantity", 1)),
+                "line_total": float(item.get("line_total", item.get("price_eur", item.get("price", 0.0)) * item.get("quantity", 1))),
+                "image_url": item.get("image_url"),
+                "health_tag": item.get("health_tag"),
+            }
+            basket_items_for_savings.append(item_dict)
+        
+        suggestions = get_savings_opportunities_for_basket(basket_items_for_savings)
+    except Exception as e:
+        # Fail quietly; suggestions are a nice-to-have
+        suggestions = []
+    
+    if suggestions:
+        st.markdown("### Smart suggestions")
+        st.caption("Small swaps that can save money or nudge the basket a bit healthier.")
+        
+        # Show at most 3 suggestions to avoid clutter
+        for s in suggestions[:3]:
+            st.markdown('<div class="nlga-card nlga-card--sidebar">', unsafe_allow_html=True)
+            
+            # 1) Title line
+            # Use type to adjust icon/text
+            icon = "💶" if getattr(s, "type", "") == "cheaper_alternative" else "🥦"
+            st.markdown(f"**{icon} {s.title if hasattr(s, 'title') and s.title else 'Suggested swap'}**")
+            
+            # 2) Main swap description
+            current_name = getattr(s, "current_item_name", None) or getattr(s, "from_item_name", "Current item")
+            alt_name = getattr(s, "alternative_item_name", None) or getattr(s, "to_item_name", "Alternative item")
+            st.markdown(f"{current_name} → **{alt_name}**")
+            
+            # 3) Savings / health delta (if available)
+            savings = getattr(s, "savings_amount", None)
+            health_delta = getattr(s, "health_delta", None)
+            
+            details_parts = []
+            if savings is not None and savings > 0:
+                details_parts.append(f"Save ~€{savings:.2f}")
+            if health_delta:
+                details_parts.append(health_delta)
+            
+            if details_parts:
+                st.caption(" • ".join(details_parts))
+            
+            st.markdown('</div>', unsafe_allow_html=True)
+    else:
+        st.markdown("### Smart suggestions")
+        st.caption("As your basket grows, we'll highlight cheaper or healthier alternatives here.")
+    
+    st.markdown("---")
     
     # Totals per supermarket
     if cart_data and cart_data.get("total_by_retailer"):

@@ -32,8 +32,6 @@ render_header(
 
 st.caption("This page shows the current status of the backend API and connectors that power search, basket, and insights.")
 
-st.divider()
-
 st.subheader("Backend API Health")
 
 # Get backend health status
@@ -64,8 +62,6 @@ if backend_status and backend_status.get("status") == "ok":
         The backend API powers product search and aggregation across
         Albert Heijn, Jumbo, Picnic, and Dirk retailers.
         """)
-    
-    st.divider()
     
     # Show raw status info in expander (optional, for debugging)
     with st.expander("📋 System Details (Raw Status Response)"):

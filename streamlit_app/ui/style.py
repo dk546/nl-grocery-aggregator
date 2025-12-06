@@ -81,12 +81,25 @@ def inject_global_css() -> None:
         
         h2 {
             font-size: 2rem !important;
-            margin-bottom: 0.75rem !important;
+            margin-top: 0.5rem !important;
+            margin-bottom: 0.5rem !important;
         }
         
         h3 {
             font-size: 1.5rem !important;
+            margin-top: 0.5rem !important;
             margin-bottom: 0.5rem !important;
+        }
+        
+        /* Section spacing */
+        section + section {
+            margin-top: 1.5rem !important;
+        }
+        
+        /* Streamlit horizontal rule (st.divider) tweak */
+        hr {
+            margin-top: 1.5rem !important;
+            margin-bottom: 1.5rem !important;
         }
         
         /* Paragraph text with comfortable line-height */
@@ -109,18 +122,26 @@ def inject_global_css() -> None:
             transform: translateY(-1px) !important;
         }
         
-        /* Cards - rounded, white background, soft shadow */
+        /* Base card */
         .nlga-card {
-            border-radius: 20px !important;
-            background: white !important;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) !important;
-            padding: 1.5rem !important;
+            border-radius: 18px !important;
+            padding: 1rem 1.25rem !important;
+            background-color: #ffffff !important;
+            box-shadow: 0 8px 20px rgba(15, 35, 52, 0.04) !important;
             margin-bottom: 1.5rem !important;
         }
         
-        /* Narrow main content width on large screens */
+        /* Sidebar cards slightly tighter */
+        .nlga-card--sidebar {
+            padding: 0.75rem 1rem !important;
+            box-shadow: 0 6px 16px rgba(15, 35, 52, 0.03) !important;
+        }
+        
+        /* Main app container: consistent width & spacing */
         .main .block-container {
             max-width: 1200px !important;
+            padding-top: 1.5rem !important;
+            padding-bottom: 2.5rem !important;
             padding-left: 2rem !important;
             padding-right: 2rem !important;
         }
@@ -132,7 +153,7 @@ def inject_global_css() -> None:
         
         /* Section dividers */
         .stDivider {
-            margin: 2rem 0 !important;
+            margin: 1.5rem 0 !important;
         }
         
         /* Metrics styling */
@@ -198,17 +219,29 @@ def inject_global_css() -> None:
             object-fit: cover !important;
         }
         
-        /* Recipe card images */
-        .nlga-recipe-card img {
+        /* Recipe card */
+        .nlga-recipe-card {
+            margin-bottom: 2rem !important;
+            padding: 0.5rem !important;
+        }
+        
+        .nlga-recipe-image img {
             border-radius: 18px !important;
-            max-height: 200px !important;
+            max-height: 180px !important;
             object-fit: cover !important;
+            width: 100% !important;
+        }
+        
+        /* Optional: Hover effect */
+        .nlga-recipe-card:hover {
+            box-shadow: 0 6px 16px rgba(0,0,0,0.08) !important;
+            transition: 0.2s ease !important;
         }
         
         /* Footer */
         .nlga-footer {
-            margin-top: 3rem !important;
-            padding: 2.5rem 0 2rem 0 !important;
+            margin-top: 2rem !important;
+            padding: 2rem 0 1.5rem 0 !important;
             background: linear-gradient(180deg, #d9f2ea 0%, #c4e6dd 100%) !important;
             border-top-left-radius: 24px !important;
             border-top-right-radius: 24px !important;
@@ -258,6 +291,22 @@ def inject_global_css() -> None:
             max-height: 220px !important;
             object-fit: cover !important;
             box-shadow: 0 14px 28px rgba(0, 0, 0, 0.08) !important;
+            margin-bottom: 0.75rem !important;
+        }
+        
+        .nlga-hero-side-image--secondary img {
+            max-height: 160px !important;  /* smaller for the second image */
+            opacity: 0.95 !important;
+        }
+        
+        /* Columns gap consistency */
+        .css-ocqkz7, .css-1r6slb0 {
+            row-gap: 1rem !important;
+        }
+        
+        /* Metrics alignment */
+        [data-testid="stMetric"] {
+            padding: 0.5rem 0.25rem !important;
         }
     </style>
     """

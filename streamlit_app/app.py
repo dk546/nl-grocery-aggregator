@@ -142,8 +142,8 @@ with st.sidebar:
 # For multi-page apps, Streamlit automatically shows the selected page content
 # When no specific page is selected, show the home page content here
 
-# 3-column hero: text, CTAs, image
-col_text, col_cta, col_image = st.columns([2.2, 1.6, 1.4], gap="large")
+# 3-column hero: text, CTAs, image-only column
+col_text, col_cta, col_image = st.columns([2.1, 1.7, 1.2], gap="large")
 
 with col_text:
     st.markdown("## Healthy, fresh groceries – at the best price")
@@ -151,6 +151,7 @@ with col_text:
         "Compare Albert Heijn, Jumbo, Picnic, and Dirk in one place. "
         "Build a basket that fits your household and your budget."
     )
+    st.caption("One place to plan a fresh, budget-friendly weekly shop for your household.")
 
 with col_cta:
     # Primary navigation buttons
@@ -185,10 +186,18 @@ with col_cta:
         st.caption("⏱️ **Less hassle**")
 
 with col_image:
-    image_path = get_random_asset_image("home_hero_side")
-    if image_path:
+    # Dedicated image column: one or two small stacked images
+    primary_image = get_random_asset_image("home_hero_side")
+    secondary_image = get_random_asset_image("home_hero_side_2")
+    
+    if primary_image:
         st.markdown('<div class="nlga-hero-side-image">', unsafe_allow_html=True)
-        st.image(image_path, use_container_width=True)
+        st.image(primary_image, use_container_width=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+    
+    if secondary_image and secondary_image != primary_image:
+        st.markdown('<div class="nlga-hero-side-image nlga-hero-side-image--secondary">', unsafe_allow_html=True)
+        st.image(secondary_image, use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
 st.divider()
@@ -231,8 +240,6 @@ Open your basket to see totals per retailer, potential savings, and simple healt
 Use this as a gentle guide – not medical advice – when planning weekly meals.
 """)
         st.markdown('</div>', unsafe_allow_html=True)
-
-st.divider()
 
 # "Why this matters" / value props with side image
 layout_main, layout_side = st.columns([2.2, 1], gap="large")

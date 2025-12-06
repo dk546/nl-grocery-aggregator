@@ -288,8 +288,6 @@ if submitted or has_stored_results:
                             width='stretch',
                             key=f"sponsored_{deal.id}",
                         )
-        
-        st.divider()
     
     # Check for problematic connectors (non-ok status for selected retailers)
     problematic = {}
@@ -360,8 +358,6 @@ if submitted or has_stored_results:
         # Display summary metrics
         st.subheader("📊 Summary")
         render_product_summary(df)
-        
-        st.divider()
         
         # Display unified Product Comparison table with Add to Basket selection
         st.subheader("📋 Product Comparison")
