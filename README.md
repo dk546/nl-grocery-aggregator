@@ -15,6 +15,7 @@ A full-stack application that aggregates grocery product search results from mul
 - **Event Logging**: Internal event logging system for analytics (search, cart, savings, templates)
 - **Search Caching**: TTL-based in-memory cache for search results (60-second TTL)
 - **Delivery Slots**: Retrieve available delivery time slots (currently Picnic only)
+- **Health Check Endpoint**: `/health` endpoint for monitoring and status checks with uptime information
 - **RESTful API**: Clean FastAPI endpoints with automatic OpenAPI documentation
 
 ### Frontend (Streamlit)
@@ -24,7 +25,10 @@ A full-stack application that aggregates grocery product search results from mul
   - Results summary with retailer highlights
 - **My Basket**: Comprehensive shopping cart management with:
   - Dashboard-style two-column layout (basket table + side summaries)
+  - **Top Metrics Band**: Items count, total cost, retailers, healthy items, and weekly budget usage
+  - **Weekly Budget Projection**: See how much of your typical weekly budget you're using (household-aware)
   - Quantity updates and item removal
+  - **Smart Suggestions**: Automatic suggestions for cheaper or healthier alternatives (up to 3 shown)
   - **Savings Finder**: Find cheaper alternatives for items in your basket
   - **Saved Baskets/Templates**: Save current basket as a template and reuse it later
   - Retailer totals breakdown
@@ -157,6 +161,8 @@ PICNIC_COUNTRY_CODE=NL
 
 # Backend URL (for Streamlit frontend - points to local backend by default)
 BACKEND_URL=http://localhost:8000
+# Note: On Render, set BACKEND_URL to your backend service URL (e.g., https://nl-grocery-aggregator.onrender.com)
+# Trailing slashes are automatically handled
 
 # OpenAI API Key (optional - for AI Health Coach feature in Health Insights page)
 OPENAI_API_KEY=your_openai_api_key_here
@@ -178,7 +184,7 @@ OPENAI_API_KEY=your_openai_api_key_here
 | `PICNIC_USERNAME` | Yes* | - | Picnic account email/username |
 | `PICNIC_PASSWORD` | Yes* | - | Picnic account password |
 | `PICNIC_COUNTRY_CODE` | No | `NL` | Picnic country code |
-| `BACKEND_URL` | No | `http://localhost:8000` | Backend API URL (used by Streamlit frontend) |
+| `BACKEND_URL` | No | `http://localhost:8000` | Backend API URL (used by Streamlit frontend for all API calls, including `/health` endpoint) |
 | `OPENAI_API_KEY` | No | - | OpenAI API key for AI Health Coach feature (optional) |
 
 *Required only if you want to use the corresponding retailer. You can use the API with just one retailer if desired.
@@ -315,12 +321,24 @@ The API will be available at http://127.0.0.1:8000
 
 ### My Basket
 - **Dashboard Layout**: Two-column layout with basket table centered and side summaries
-- **Top Metrics Band**: Quick overview of items, total cost, retailers, and healthy items count
+- **Top Metrics Band**: Quick overview of items, total cost, retailers, healthy items count, and weekly budget usage
+  - **Weekly Budget Projection**: Shows percentage of typical weekly budget used based on household profile
+  - Budget hint displayed below metrics when household profile is set
 - **Shopping Cart Management**: 
   - View, manage, and remove items from your basket
   - Edit quantities directly in the table
   - Remove items via checkboxes or by setting quantity to 0
   - Update basket button to apply all changes at once
+- **Smart Suggestions** (new):
+  - Automatically analyzes basket items to find cheaper or healthier alternatives
+  - Shows up to 3 suggestions in the side column
+  - Each suggestion displays:
+    - Icon (💶 for cheaper alternatives, 🥦 for healthier alternatives)
+    - Current item → Alternative item swap
+    - Estimated savings amount
+    - Health improvement delta (if applicable)
+  - Suggestions are computed in real-time using the same savings logic as Savings Finder
+  - Gracefully handles errors (suggestions are a nice-to-have feature)
 - **Savings Finder**:
   - Analyze current basket items to find cheaper alternatives
   - See potential savings amount
@@ -334,7 +352,7 @@ The API will be available at http://127.0.0.1:8000
   - Templates are session-based (tied to your browser session)
 - **Session Persistence**: Basket persists across page navigations within the same browser session
 - **Cart Summary**: See total items, total price, and retailer breakdown
-- **Side Column**: Retailer totals, savings finder, templates, health summary, and NLGA Plus info
+- **Side Column**: Smart suggestions, retailer totals, savings finder, templates, health summary, and NLGA Plus info
 
 ### Health Insights
 - **Two-Column Layout**: Charts and tables on left, summary and swaps on right
@@ -359,7 +377,10 @@ The API will be available at http://127.0.0.1:8000
 - **Recipe Details**: View ingredients, instructions, prep time, and difficulty for each recipe
 
 ### System Status
-- **Backend Health**: Monitor backend API status and connectivity
+- **Backend Health**: Monitor backend API status and connectivity via `/health` endpoint
+  - Shows real-time backend status (online/offline) in sidebar and System Status page
+  - Displays API metadata, version, and uptime information
+  - Gracefully handles connection errors and timeouts
 - **API Documentation**: Quick access to API documentation
 - **System Diagnostics**: View system details and planned diagnostic features
 - **Footer Image**: Small marketing image at the bottom
@@ -373,6 +394,27 @@ The API will be available at http://127.0.0.1:8000
 - **Consistent Styling**: Global CSS with Nunito font, brand colors, and consistent spacing
 
 ## API Endpoints
+
+### Health Check
+
+Check backend health status and uptime:
+
+```bash
+curl "http://127.0.0.1:8000/health"
+```
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "name": "NL Grocery Aggregator API",
+  "version": "1.0.0",
+  "description": "Backend API for aggregating grocery products from Albert Heijn, Jumbo, Picnic, and Dirk",
+  "uptime_seconds": 12345
+}
+```
+
+This endpoint is used by the frontend System Status page to monitor backend availability. Always returns `200 OK` if the endpoint is reachable.
 
 ### Search Products
 
@@ -481,6 +523,8 @@ For production/staging, the backend is deployed on Render using `render.yaml`.
 **Environment Variables on Render:**
 - Set all required environment variables in the Render dashboard (APIFY_TOKEN, PICNIC_USERNAME, PICNIC_PASSWORD, etc.)
 - For the Streamlit frontend service, set `BACKEND_URL` to your backend service URL (e.g., `https://nl-grocery-aggregator.onrender.com`)
+  - This allows the frontend to connect to the backend API and use the `/health` endpoint for status checks
+  - Trailing slashes are automatically removed, so both formats work
 - The `.env` file is **not** used on Render; platform environment variables are used instead.
 
 See the [Deployment](#deployment) section below for detailed Render setup instructions.

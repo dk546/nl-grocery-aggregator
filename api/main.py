@@ -23,6 +23,7 @@ Access API documentation at:
 # This ensures local development uses .env file, while Render uses platform env vars
 import api.config  # noqa: F401
 
+import time
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, Header, Query, HTTPException, status
@@ -53,6 +54,9 @@ from api.schemas import (
     SaveBasketTemplateResponse,
 )
 
+# Track app start time for uptime calculation
+_APP_START_TIME = time.time()
+
 app = FastAPI(
     title="NL Grocery Aggregator API",
     description="Backend API for aggregating grocery products from Albert Heijn, Jumbo, Picnic, and Dirk",
@@ -60,7 +64,7 @@ app = FastAPI(
     tags_metadata=[
         {
             "name": "search",
-            "description": "Search for products across multiple retailers (AH, Jumbo, Picnic).",
+            "description": "Search for products across multiple retailers (AH, Jumbo, Picnic, Dirk).",
         },
         {
             "name": "cart",
@@ -69,6 +73,10 @@ app = FastAPI(
         {
             "name": "delivery",
             "description": "Get delivery slots for retailers (currently only Picnic supported).",
+        },
+        {
+            "name": "health",
+            "description": "Health check and monitoring endpoints.",
         },
     ],
 )
@@ -973,6 +981,25 @@ def delete_basket_template(
     return
 
 
+@app.get("/health", tags=["health"])
+def health():
+    """
+    Health check endpoint for monitoring and status checks.
+    
+    Returns:
+        Dictionary with status, API metadata, and uptime information.
+        Always returns 200 OK if the endpoint is reachable.
+    """
+    uptime_seconds = int(time.time() - _APP_START_TIME)
+    return {
+        "status": "ok",
+        "name": "NL Grocery Aggregator API",
+        "version": "1.0.0",
+        "description": "Backend API for aggregating grocery products from Albert Heijn, Jumbo, Picnic, and Dirk",
+        "uptime_seconds": uptime_seconds,
+    }
+
+
 @app.get("/")
 def root():
     """
@@ -984,6 +1011,6 @@ def root():
     return {
         "name": "NL Grocery Aggregator API",
         "version": "1.0.0",
-        "description": "Backend API for aggregating grocery products from Albert Heijn, Jumbo, and Picnic",
+        "description": "Backend API for aggregating grocery products from Albert Heijn, Jumbo, Picnic, and Dirk",
         "docs": "/docs",
     }

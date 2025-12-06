@@ -38,7 +38,7 @@ def get_backend_url() -> str:
     Get the backend API base URL from environment variable or use default.
     
     Returns:
-        Backend URL string. Defaults to http://localhost:8000 for local development.
+        Backend URL string with trailing slash removed. Defaults to http://localhost:8000 for local development.
         On Render, BACKEND_URL should be explicitly set in the environment.
         
     For local development:
@@ -48,42 +48,56 @@ def get_backend_url() -> str:
     For Render/production:
         - Set BACKEND_URL environment variable in Render dashboard to the backend service URL
         - Example: https://nl-grocery-aggregator.onrender.com
+        - Trailing slashes are automatically removed
     """
-    return os.getenv("BACKEND_URL", "http://localhost:8000")
+    url = os.getenv("BACKEND_URL", "http://localhost:8000")
+    return url.rstrip("/")
 
 
 @st.cache_data(ttl=60)  # Cache for 60 seconds to avoid hitting backend too frequently
 def get_health_status() -> Optional[Dict[str, Any]]:
     """
-    Check backend health status by calling root endpoint.
+    Check backend health status by calling /health endpoint.
     
     Returns:
         Dictionary with normalized status info:
         {
             "status": "ok",
-            "raw": {...},  # Full response from backend
+            "raw": {...},  # Full response from /health endpoint
             "docs_url": "/docs"  # URL to API documentation
         }
         Or None if backend is unreachable.
         
-    # TODO: Update to call GET /health endpoint when it exists in the backend.
-        Currently uses root endpoint (/) which returns basic API info.
-        When /health endpoint is available, this function should be updated to:
-        - Call GET {BACKEND_URL}/health instead of /
-        - Parse health metrics, uptime, connector status, etc.
+    The function gracefully handles connection errors, timeouts, and non-200 responses.
+    The UI components can check for status == "ok" to determine if backend is online.
     """
     try:
         backend_url = get_backend_url()
-        response = requests.get(f"{backend_url}/", timeout=5)
+        response = requests.get(f"{backend_url}/health", timeout=5)
         response.raise_for_status()
         data = response.json()
-        return {
-            "status": "ok",
-            "raw": data,
-            "docs_url": data.get("docs", "/docs")
-        }
+        
+        # Validate that we got a proper health response
+        if data.get("status") == "ok":
+            return {
+                "status": "ok",
+                "raw": data,
+                "docs_url": "/docs"  # Default docs URL
+            }
+        else:
+            # Health endpoint returned but status is not "ok"
+            return None
+    except requests.exceptions.Timeout:
+        # Backend is too slow - treat as offline
+        return None
+    except requests.exceptions.ConnectionError:
+        # Cannot connect to backend (DNS, network, etc.)
+        return None
+    except requests.exceptions.HTTPError:
+        # Non-200 response - backend may be unhealthy
+        return None
     except requests.exceptions.RequestException:
-        # Don't log errors here - let the UI component handle it
+        # Any other request error
         return None
 
 
