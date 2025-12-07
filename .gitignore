@@ -60,3 +60,6 @@ tests/test_api_smoke.py
 #to avoid committing history logs
 /price_history.jsonl
 /events.log
+
+local_dev.db
+*.db

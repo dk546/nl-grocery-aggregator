@@ -1,4 +1,6 @@
-# Production dependencies
+# ==========================
+# Core backend dependencies
+# ==========================
 fastapi
 uvicorn[standard]
 apify-client
@@ -7,16 +9,20 @@ pydantic
 python-dotenv
 requests
 
-# Frontend dependencies (Streamlit)
+# ==========================
+# Frontend (Streamlit) app
+# ==========================
 streamlit
 pandas
 
-# Optional database dependencies (only needed if DATABASE_URL is set)
-# sqlalchemy
-# psycopg2-binary  # For Postgres support
+# ==========================
+# Database / persistence
+# (Postgres via SQLAlchemy)
+# ==========================
+sqlalchemy
+psycopg2-binary
 
-# Dev dependencies (for testing)
+# ==========================
+# Dev / testing
+# ==========================
 pytest
-
-local_dev.db
-*.db
