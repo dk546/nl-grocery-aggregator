@@ -388,7 +388,13 @@ with side_col:
             
             # 1) Title line
             # Use type to adjust icon/text
-            icon = "💶" if getattr(s, "type", "") == "cheaper_alternative" else "🥦"
+            suggestion_type = getattr(s, "type", "cheaper") or "cheaper"
+            if suggestion_type == "cheaper_and_healthier":
+                icon = "🌱"
+            elif suggestion_type == "healthier":
+                icon = "🥦"
+            else:  # cheaper
+                icon = "💶"
             st.markdown(f"**{icon} {s.title if hasattr(s, 'title') and s.title else 'Suggested swap'}**")
             
             # 2) Main swap description

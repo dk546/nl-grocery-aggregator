@@ -1000,6 +1000,50 @@ def health():
     }
 
 
+@app.get("/price-history/{retailer}/{product_id}", tags=["search"])
+def price_history(retailer: str, product_id: str, limit: int = Query(30, ge=1, le=100)):
+    """
+    Demo price history endpoint.
+    
+    Returns recent prices for this product based on previous searches in this environment.
+    Data is based on previous searches and resets on backend restart.
+    
+    This is a demo feature - data is stored in a local file and is ephemeral.
+    
+    Args:
+        retailer: Retailer identifier (ah, jumbo, picnic, dirk)
+        product_id: Product identifier (may include retailer prefix like "ah:123" or just "123")
+        limit: Maximum number of price points to return (default: 30, max: 100)
+        
+    Returns:
+        Dictionary with:
+        - status: "ok"
+        - retailer: Retailer identifier
+        - product_id: Product identifier
+        - points: List of price points, each with "ts" (timestamp) and "price_eur"
+    """
+    try:
+        from aggregator.price_history import get_price_history
+        
+        points = get_price_history(product_id=product_id, retailer=retailer, limit=limit)
+        
+        return {
+            "status": "ok",
+            "retailer": retailer,
+            "product_id": product_id,
+            "points": [
+                {"ts": p.ts, "price_eur": p.price_eur}
+                for p in points
+            ],
+            "demo_note": "This is a demo feature. Data resets when the backend restarts.",
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving price history: {str(e)}"
+        ) from e
+
+
 @app.get("/")
 def root():
     """

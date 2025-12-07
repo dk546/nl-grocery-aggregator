@@ -192,8 +192,13 @@ class TestAggregatedSearch:
     @patch("aggregator.search.AHConnector")
     @patch("aggregator.search.JumboConnector")
     @patch("aggregator.search.PicnicConnector")
-    def test_aggregated_search_handles_missing_prices(self, mock_picnic, mock_jumbo, mock_ah):
+    @patch("aggregator.search.DirkConnector")
+    def test_aggregated_search_handles_missing_prices(self, mock_dirk, mock_picnic, mock_jumbo, mock_ah):
         """Test that aggregated_search handles products with missing prices."""
+        # Clear cache to avoid interference from previous tests
+        from aggregator.utils.cache import clear_cache
+        clear_cache()
+        
         # Setup mock connector with product missing price
         mock_ah_instance = Mock()
         mock_ah_instance.search_products.return_value = [
@@ -216,6 +221,7 @@ class TestAggregatedSearch:
         # Mock other connectors
         mock_jumbo.return_value.search_products.return_value = []
         mock_picnic.return_value.search_products.return_value = []
+        mock_dirk.return_value.search_products.return_value = []
         
         # Perform search
         response = aggregated_search(
@@ -537,8 +543,13 @@ class TestAggregatedSearch:
     @patch("aggregator.search.AHConnector")
     @patch("aggregator.search.JumboConnector")
     @patch("aggregator.search.PicnicConnector")
-    def test_aggregated_search_health_filter_none(self, mock_picnic, mock_jumbo, mock_ah):
+    @patch("aggregator.search.DirkConnector")
+    def test_aggregated_search_health_filter_none(self, mock_dirk, mock_picnic, mock_jumbo, mock_ah):
         """Test that health_filter=None returns all products regardless of health tag."""
+        # Clear cache to avoid interference from previous tests
+        from aggregator.utils.cache import clear_cache
+        clear_cache()
+        
         # Setup mock connector with products of different health tags
         mock_ah_instance = Mock()
         mock_ah_instance.search_products.return_value = [
@@ -551,6 +562,7 @@ class TestAggregatedSearch:
         # Mock other connectors
         mock_jumbo.return_value.search_products.return_value = []
         mock_picnic.return_value.search_products.return_value = []
+        mock_dirk.return_value.search_products.return_value = []
         
         # Perform search without health_filter
         response = aggregated_search(
@@ -574,8 +586,13 @@ class TestAggregatedSearch:
     @patch("aggregator.search.AHConnector")
     @patch("aggregator.search.JumboConnector")
     @patch("aggregator.search.PicnicConnector")
-    def test_aggregated_search_marks_cheapest_in_group(self, mock_picnic, mock_jumbo, mock_ah):
+    @patch("aggregator.search.DirkConnector")
+    def test_aggregated_search_marks_cheapest_in_group(self, mock_dirk, mock_picnic, mock_jumbo, mock_ah):
         """Test that group_by_name_and_mark_cheapest marks the cheapest product in each name group."""
+        # Clear cache to avoid interference from previous tests
+        from aggregator.utils.cache import clear_cache
+        clear_cache()
+        
         # Setup mock connectors with products that have same names (different retailers)
         mock_ah_instance = Mock()
         mock_ah_instance.search_products.return_value = [
@@ -594,6 +611,9 @@ class TestAggregatedSearch:
             {"retailer": "picnic", "id": "3", "name": "Melk", "price_eur": 2.50, "raw": {}}
         ]
         mock_picnic.return_value = mock_picnic_instance
+        
+        # Mock Dirk connector
+        mock_dirk.return_value.search_products.return_value = []
         
         # Perform search
         response = aggregated_search(
@@ -621,8 +641,13 @@ class TestAggregatedSearch:
     @patch("aggregator.search.AHConnector")
     @patch("aggregator.search.JumboConnector")
     @patch("aggregator.search.PicnicConnector")
-    def test_aggregated_search_marks_cheapest_case_insensitive(self, mock_picnic, mock_jumbo, mock_ah):
+    @patch("aggregator.search.DirkConnector")
+    def test_aggregated_search_marks_cheapest_case_insensitive(self, mock_dirk, mock_picnic, mock_jumbo, mock_ah):
         """Test that grouping by name is case-insensitive."""
+        # Clear cache to avoid interference from previous tests
+        from aggregator.utils.cache import clear_cache
+        clear_cache()
+        
         # Setup mock connectors with products that have same names but different case
         mock_ah_instance = Mock()
         mock_ah_instance.search_products.return_value = [
@@ -637,8 +662,9 @@ class TestAggregatedSearch:
         ]
         mock_jumbo.return_value = mock_jumbo_instance
         
-        # Mock picnic
+        # Mock picnic and dirk
         mock_picnic.return_value.search_products.return_value = []
+        mock_dirk.return_value.search_products.return_value = []
         
         # Perform search
         response = aggregated_search(

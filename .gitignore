@@ -56,3 +56,7 @@ sandbox/
 tests/__init__.py
 tests/conftest.py
 tests/test_api_smoke.py
+
+#to avoid committing history logs
+/price_history.jsonl
+/events.log

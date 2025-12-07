@@ -19,7 +19,7 @@ Design principles:
     - Add image carousel for product images
 """
 
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 import streamlit as st
@@ -400,4 +400,29 @@ def render_feature_card(title: str, description: str, emoji: str = "📦") -> No
         st.markdown(f"### {emoji} {title}")
         st.markdown(description)
         st.markdown("---")
+
+
+def render_basket_summary_chip(cart_summary: Optional[Dict[str, Any]]) -> None:
+    """
+    Render a small basket summary chip to show users they have items in their basket.
+    
+    Args:
+        cart_summary: Dictionary with total_items and total_cost_eur, or None if empty/error
+    """
+    if not cart_summary or cart_summary.get("total_items", 0) <= 0:
+        return
+    
+    total_items = cart_summary["total_items"]
+    total_cost = cart_summary["total_cost_eur"]
+    
+    st.markdown(
+        f"""
+        <div class="nlga-card nlga-basket-chip">
+            🧺 <strong>{total_items} items</strong> in your basket · ~€{total_cost:.2f}  
+            <br/>
+            <span style="font-size: 0.85rem; opacity: 0.85;">You can review or edit them on the <em>My Basket</em> page.</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 

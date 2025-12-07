@@ -21,11 +21,38 @@ logger = logging.getLogger(__name__)
 # This avoids noise from tiny price differences
 MIN_PRICE_DIFFERENCE_PER_UNIT = 0.01  # 1 cent minimum
 
+# Maximum price increase (as percentage) to consider for healthier alternatives
+# e.g., 0.10 = 10% - won't suggest healthier if price is more than 10% higher
+MAX_PRICE_INCREASE_FOR_HEALTHIER = 0.10
+
+# Health tag ordering for comparison (higher number = healthier)
+HEALTH_ORDER = {
+    "unhealthy": 0,
+    "neutral": 1,
+    "healthy": 2,
+}
+
+
+def _is_healthier(new_tag: str, current_tag: str) -> bool:
+    """
+    Check if new_tag represents a healthier option than current_tag.
+    
+    Args:
+        new_tag: Health tag of the alternative product
+        current_tag: Health tag of the current item
+        
+    Returns:
+        True if new_tag is healthier than current_tag, False otherwise
+    """
+    new_order = HEALTH_ORDER.get(new_tag or "neutral", 1)
+    current_order = HEALTH_ORDER.get(current_tag or "neutral", 1)
+    return new_order > current_order
+
 
 @dataclass
 class SavingsSuggestion:
     """A single savings opportunity suggestion."""
-    type: str  # e.g., "cheaper_alternative", "healthier_alternative"
+    type: str  # "cheaper", "healthier", "cheaper_and_healthier"
     current_item_name: str
     alternative_item_name: str
     savings_amount: float | None = None
@@ -106,9 +133,67 @@ def find_basket_savings(
         s.get("estimated_savings", 0.0) for s in suggestions
     )
     
+    # Also look for healthier-only alternatives (when no cheaper option found)
+    for basket_item in basket_items:
+        try:
+            # Check if we already have a suggestion for this item (cheaper)
+            item_suggestions = [s for s in suggestions if s.get("current", {}).get("product_id") == str(basket_item.get("product_id", ""))]
+            if item_suggestions:
+                # Already have a cheaper suggestion, skip healthier-only
+                continue
+            
+            # Try to find a healthier alternative
+            healthier_suggestion = _find_healthier_alternative(basket_item, search_fn)
+            if healthier_suggestion:
+                suggestions.append(healthier_suggestion)
+        except Exception as e:
+            logger.warning(
+                "Error finding healthier alternative for basket item %s (%s): %s",
+                basket_item.get("name", "unknown"),
+                basket_item.get("product_id", "unknown"),
+                str(e),
+                exc_info=True
+            )
+            continue
+    
+    # Deduplicate suggestions - prefer cheaper_and_healthier > cheaper > healthier
+    # Group by current product_id and keep the best suggestion
+    suggestion_map: Dict[str, Dict[str, Any]] = {}
+    for suggestion in suggestions:
+        current_product_id = suggestion.get("current", {}).get("product_id", "")
+        if not current_product_id:
+            continue
+        
+        existing = suggestion_map.get(current_product_id)
+        if not existing:
+            suggestion_map[current_product_id] = suggestion
+        else:
+            # Prioritize: cheaper_and_healthier > cheaper > healthier
+            existing_type = existing.get("type", "cheaper")
+            new_type = suggestion.get("type", "cheaper")
+            
+            priority = {
+                "cheaper_and_healthier": 3,
+                "cheaper": 2,
+                "healthier": 1,
+            }
+            
+            if priority.get(new_type, 0) > priority.get(existing_type, 0):
+                suggestion_map[current_product_id] = suggestion
+    
+    # Convert back to list
+    deduplicated_suggestions = list(suggestion_map.values())
+    
+    # Recalculate total savings (only for cheaper suggestions)
+    potential_savings_total = sum(
+        s.get("estimated_savings", 0.0) 
+        for s in deduplicated_suggestions 
+        if s.get("estimated_savings") is not None and s.get("estimated_savings", 0.0) > 0
+    )
+    
     return {
         "potential_savings_total": round(potential_savings_total, 2),
-        "suggestions": suggestions
+        "suggestions": deduplicated_suggestions
     }
 
 
@@ -234,6 +319,16 @@ def _find_cheaper_alternative(
     if estimated_savings <= 0:
         return None
     
+    # Check if alternative is also healthier
+    current_health = basket_item.get("health_tag") or "neutral"
+    alt_health = best_alternative.get("health_tag") or "neutral"
+    is_also_healthier = _is_healthier(alt_health, current_health)
+    
+    # Determine suggestion type
+    suggestion_type = "cheaper"
+    if is_also_healthier:
+        suggestion_type = "cheaper_and_healthier"
+    
     # Build suggestion
     return {
         "current": {
@@ -245,7 +340,7 @@ def _find_cheaper_alternative(
             "price_per_unit": current_price_per_unit,
             "line_total": current_line_total,
             "image_url": basket_item.get("image_url"),
-            "health_tag": basket_item.get("health_tag"),
+            "health_tag": current_health,
         },
         "alternative": {
             "retailer": best_alternative.get("retailer", ""),
@@ -254,10 +349,11 @@ def _find_cheaper_alternative(
             "price_eur": best_alt_price_eur,
             "price_per_unit": best_alt_price_per_unit,
             "image_url": best_alternative.get("image_url"),
-            "health_tag": best_alternative.get("health_tag"),
+            "health_tag": alt_health,
         },
         "estimated_line_total": round(estimated_line_total, 2),
         "estimated_savings": round(estimated_savings, 2),
+        "type": suggestion_type,
     }
 
 
@@ -290,26 +386,36 @@ def get_savings_opportunities_for_basket(basket_items: List[Dict[str, Any]]) -> 
             current = s.get("current", {})
             alternative = s.get("alternative", {})
             
-            # Determine type based on health delta
-            current_health = current.get("health_tag")
-            alt_health = alternative.get("health_tag")
+            # Get type from suggestion dict (already set by find_basket_savings)
+            suggestion_type = s.get("type", "cheaper")
             
-            suggestion_type = "cheaper_alternative"
-            health_delta_str = None
+            # Build health delta string if not already present
+            health_delta_str = s.get("health_delta")
+            if not health_delta_str:
+                current_health = current.get("health_tag") or "neutral"
+                alt_health = alternative.get("health_tag") or "neutral"
+                if current_health != alt_health:
+                    health_delta_str = f"{current_health} → {alt_health}"
             
-            if current_health and alt_health:
-                if current_health == "unhealthy" and alt_health in ("healthy", "neutral"):
-                    suggestion_type = "healthier_alternative"
-                    health_delta_str = f"Improve from {current_health} to {alt_health}"
-                elif current_health == "neutral" and alt_health == "healthy":
-                    suggestion_type = "healthier_alternative"
-                    health_delta_str = f"Improve from {current_health} to {alt_health}"
+            # Build title based on type
+            savings_amount = s.get("estimated_savings")
+            title_parts = []
             
-            # Build title
-            savings_amount = s.get("estimated_savings", 0.0)
-            title = f"Save €{savings_amount:.2f}"
-            if health_delta_str:
-                title += f" & improve health"
+            if suggestion_type == "cheaper_and_healthier":
+                if savings_amount and savings_amount > 0:
+                    title_parts.append(f"Save €{savings_amount:.2f}")
+                title_parts.append("& improve health")
+            elif suggestion_type == "healthier":
+                if savings_amount and savings_amount > 0:
+                    title_parts.append(f"Save €{savings_amount:.2f}")
+                title_parts.append("Healthier choice")
+            else:  # cheaper
+                if savings_amount and savings_amount > 0:
+                    title_parts.append(f"Save €{savings_amount:.2f}")
+                else:
+                    title_parts.append("Cheaper option")
+            
+            title = " ".join(title_parts) if title_parts else "Suggested swap"
             
             suggestion = SavingsSuggestion(
                 type=suggestion_type,

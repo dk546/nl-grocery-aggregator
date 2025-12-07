@@ -29,8 +29,8 @@ import api.config  # noqa: F401
 
 import streamlit as st
 
-from utils.api_client import get_health_status
-from utils.ui_components import render_backend_status
+from utils.api_client import get_health_status, get_cart_summary
+from utils.ui_components import render_backend_status, render_basket_summary_chip
 from utils.session import get_or_create_session_id
 from utils.profile import HOUSEHOLD_PROFILES, DEFAULT_PROFILE_KEY, get_profile_by_key
 from ui.style import inject_global_css, section_header, image_card, render_footer, get_random_asset_image
@@ -199,6 +199,12 @@ with col_image:
         st.markdown('<div class="nlga-hero-side-image nlga-hero-side-image--secondary">', unsafe_allow_html=True)
         st.image(secondary_image, use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
+
+# Show basket summary chip if user has items in basket
+session_id = get_or_create_session_id()
+cart_summary = get_cart_summary(session_id)
+if cart_summary:
+    render_basket_summary_chip(cart_summary)
 
 st.divider()
 

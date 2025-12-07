@@ -137,6 +137,15 @@ def inject_global_css() -> None:
             box-shadow: 0 6px 16px rgba(15, 35, 52, 0.03) !important;
         }
         
+        /* Basket summary chip */
+        .nlga-basket-chip {
+            padding: 0.75rem 1rem !important;
+            background: linear-gradient(135deg, #e8f5e9 0%, #f1f8e9 100%) !important;
+            border-left: 3px solid #0b7043 !important;
+            margin-bottom: 1rem !important;
+            font-size: 0.9rem !important;
+        }
+        
         /* Main app container: consistent width & spacing */
         .main .block-container {
             max-width: 1200px !important;

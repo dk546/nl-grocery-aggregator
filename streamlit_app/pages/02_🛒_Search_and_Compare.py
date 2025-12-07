@@ -22,11 +22,12 @@ if str(project_root) not in sys.path:
 
 import pandas as pd
 import streamlit as st
+from datetime import datetime
 
 from utils.session import get_or_create_session_id
-from utils.api_client import search_products, add_to_cart_backend, view_cart_backend
+from utils.api_client import search_products, add_to_cart_backend, view_cart_backend, get_cart_summary, get_price_history
 from utils.ui_components import (
-    render_product_summary
+    render_product_summary, render_basket_summary_chip
 )
 from utils.sponsored_data import get_sponsored_deals_for_search
 from utils.retailers import RETAILER_OPTIONS, DEFAULT_RETAILERS, get_retailer_display_name
@@ -44,6 +45,11 @@ section_header(
 
 # Get session ID for cart operations (persists across page navigations)
 session_id = get_or_create_session_id()
+
+# Show basket summary chip if user has items in basket
+cart_summary = get_cart_summary(session_id)
+if cart_summary:
+    render_basket_summary_chip(cart_summary)
 
 # Define options mappings (needed both inside and outside form)
 # Use centralized retailer configuration
@@ -672,6 +678,52 @@ if submitted or has_stored_results:
                     st.warning("⚠️ All selected items were already in your basket.")
         else:
             st.caption("👆 Select items using the checkboxes in the rightmost column and click 'Add Selected Item(s) to Basket' above.")
+        
+        # Price History Demo section
+        st.markdown("---")
+        st.markdown("### 📈 Price History (Demo)")
+        st.caption("View price trends for products. This is a demo feature - data resets when the backend restarts.")
+        
+        # Product selector for price history
+        if len(products) > 0:
+            product_options = [
+                f"{p.get('name', 'Unknown')} ({get_retailer_display_name(p.get('retailer', ''))})"
+                for p in products[:20]  # Limit to first 20 products
+            ]
+            
+            selected_product_idx = st.selectbox(
+                "Select a product to view price history:",
+                options=range(len(product_options)),
+                format_func=lambda x: product_options[x] if x < len(product_options) else "",
+                key="price_history_product_select"
+            )
+            
+            if selected_product_idx is not None and selected_product_idx < len(products):
+                selected_product = products[selected_product_idx]
+                product_id = selected_product.get("id") or selected_product.get("product_id", "")
+                retailer = selected_product.get("retailer", "")
+                
+                if product_id and retailer:
+                    # Fetch price history
+                    history_data = get_price_history(retailer, product_id)
+                    
+                    if history_data and history_data.get("points"):
+                        points = history_data["points"]
+                        
+                        # Create DataFrame for chart
+                        history_df = pd.DataFrame([
+                            {
+                                "Date": datetime.fromtimestamp(p["ts"]).strftime("%Y-%m-%d %H:%M"),
+                                "Price (€)": p["price_eur"]
+                            }
+                            for p in points
+                        ])
+                        
+                        st.line_chart(history_df.set_index("Date")["Price (€)"])
+                        st.caption(f"Showing {len(points)} price point(s) for this product.")
+                        st.info("💡 This is a demo feature. Price data is based on recent searches and will reset when the backend restarts.")
+                    else:
+                        st.info("No price history available yet for this product. This demo history is built from recent searches and resets when the backend restarts.")
         
         # TODO: Future enhancements:
         #   - Support adding quantities (currently adds 1 of each)

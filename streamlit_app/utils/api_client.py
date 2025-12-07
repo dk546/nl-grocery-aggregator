@@ -166,6 +166,67 @@ def search_products(
         return None
 
 
+@st.cache_data(ttl=30)  # Cache for 30 seconds to avoid over-calling
+def get_cart_summary(session_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Lightweight summary of the cart for the given session_id.
+    
+    Returns:
+        Dictionary with:
+        - total_items: Total number of items in cart
+        - total_cost_eur: Total cost of cart in euros
+        Or None if cart is empty or error occurred.
+    """
+    try:
+        backend_url = get_backend_url()
+        response = requests.get(
+            f"{backend_url}/cart/view",
+            headers={"X-Session-ID": session_id},
+            timeout=5
+        )
+        response.raise_for_status()
+        data = response.json()
+        
+        items = data.get("items", [])
+        total_items = len(items)
+        total_cost = data.get("total_price", 0.0)
+        
+        if total_items == 0:
+            return None
+        
+        return {
+            "total_items": total_items,
+            "total_cost_eur": total_cost,
+        }
+    except requests.exceptions.RequestException:
+        # Fail silently - basket summary is a nice-to-have
+        return None
+
+
+def get_price_history(retailer: str, product_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Get price history for a product (demo feature).
+    
+    Args:
+        retailer: Retailer identifier (ah, jumbo, picnic, dirk)
+        product_id: Product identifier (may include retailer prefix)
+        
+    Returns:
+        Dictionary with status, retailer, product_id, and points list, or None on error.
+    """
+    try:
+        backend_url = get_backend_url()
+        response = requests.get(
+            f"{backend_url}/price-history/{retailer}/{product_id}",
+            timeout=5
+        )
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException:
+        # Fail silently - price history is a demo feature
+        return None
+
+
 def get_delivery_slots(retailer: str = "picnic") -> Optional[List[Dict[str, Any]]]:
     """
     Get available delivery slots for a retailer.

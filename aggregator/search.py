@@ -453,6 +453,14 @@ def _aggregated_search_uncached(
     if "picnic" in connector_status and connector_status["picnic"] != "ok":
         logger.info("Picnic status: %s (AH and Jumbo results are unaffected)", connector_status["picnic"])
     
+    # Record prices to history (demo feature - non-blocking)
+    try:
+        from aggregator.price_history import record_prices_for_products
+        record_prices_for_products(results)
+    except Exception:
+        # Fail silently - price history is a demo feature
+        pass
+    
     # Return results with connector status
     return {
         "results": results,
