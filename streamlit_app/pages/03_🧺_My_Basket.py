@@ -35,6 +35,7 @@ from utils.api_client import (
     save_basket_template,
     apply_basket_template,
     delete_basket_template,
+    get_price_history,
 )
 from utils.profile import HOUSEHOLD_PROFILES, get_profile_by_key
 from utils.retailers import get_retailer_display_name
@@ -119,6 +120,20 @@ if weekly_budget and profile:
     st.caption(
         f"Based on a typical weekly budget of ~€{weekly_budget:.0f} for your **{profile.label.lower()}** household."
     )
+
+# Continue shopping CTA (when basket has items)
+st.markdown("---")
+col1, col2, col3 = st.columns([1, 2, 1])
+with col2:
+    try:
+        st.page_link(
+            "pages/02_🛒_Search_and_Compare.py",
+            label="🔍 Continue shopping",
+            icon="🔍",
+            use_container_width=True,
+        )
+    except (AttributeError, TypeError):
+        st.button("🔍 Continue shopping (go to Search & Compare)", use_container_width=True)
 
 st.divider()
 
@@ -348,6 +363,71 @@ with main_col:
     with col2:
         if st.button("🔍 Add More Items", width='stretch'):
             st.switch_page("pages/02_🛒_Search_and_Compare.py")
+    
+    # Price trend (demo) section
+    st.markdown("---")
+    st.markdown("### 📈 Price trends (demo)")
+    st.caption("View price history for items in your basket. This is a demo feature built from recent searches.")
+    
+    if basket:
+        # Create a selectbox to choose which item to view price history for
+        product_options = [
+            f"{item.get('name', 'Unknown Product')} ({get_retailer_display_name(item.get('retailer', ''))})"
+            for item in basket
+        ]
+        
+        selected_product_idx = st.selectbox(
+            "Select an item to view price history:",
+            options=range(len(product_options)),
+            format_func=lambda x: product_options[x] if x < len(product_options) else "",
+            key="price_history_product_select_basket"
+        )
+        
+        if selected_product_idx is not None and selected_product_idx < len(basket):
+            selected_item = basket[selected_product_idx]
+            product_id = selected_item.get("product_id") or selected_item.get("id", "")
+            retailer = selected_item.get("retailer", "")
+            product_name = selected_item.get("name", "Unknown Product")
+            
+            if product_id and retailer:
+                # Fetch price history
+                try:
+                    history_data = get_price_history(retailer, product_id)
+                    
+                    if history_data and history_data.get("points"):
+                        points = history_data["points"]
+                        
+                        # Create DataFrame for chart
+                        from datetime import datetime
+                        
+                        history_df = pd.DataFrame([
+                            {
+                                "Date": datetime.fromtimestamp(p["ts"]).strftime("%Y-%m-%d %H:%M"),
+                                "Price (€)": p["price_eur"]
+                            }
+                            for p in points
+                        ])
+                        history_df["Date"] = pd.to_datetime(history_df["Date"])
+                        history_df = history_df.set_index("Date")
+                        
+                        st.markdown(f"**Price history for {product_name} ({get_retailer_display_name(retailer)})**")
+                        st.line_chart(history_df, y="Price (€)")
+                        st.caption(
+                            "💡 **Demo feature**: Price history is built from recent searches and resets when the backend restarts. "
+                            "This is not persistent across deployments."
+                        )
+                    else:
+                        st.info(
+                            f"No price history yet for **{product_name}**. "
+                            "Search for this item a few times to build up historical data. "
+                            "This demo feature resets when the backend restarts."
+                        )
+                except Exception as e:
+                    st.caption(f"Unable to load price history: {str(e)}")
+            else:
+                st.warning("Could not retrieve product ID or retailer for selected item.")
+    else:
+        st.info("Add items to your basket to view price trends.")
 
 # Side column: retailer totals, savings, templates, insights
 with side_col:
@@ -370,6 +450,8 @@ with side_col:
                 "line_total": float(item.get("line_total", item.get("price_eur", item.get("price", 0.0)) * item.get("quantity", 1))),
                 "image_url": item.get("image_url"),
                 "health_tag": item.get("health_tag"),
+                "category": item.get("category"),
+                "price_per_unit": item.get("price_per_unit"),
             }
             basket_items_for_savings.append(item_dict)
         

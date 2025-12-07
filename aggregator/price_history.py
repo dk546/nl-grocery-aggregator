@@ -119,7 +119,7 @@ def get_price_history(product_id: str, retailer: str, limit: int = 30) -> List[P
         
         # Sort by timestamp (oldest first) and limit
         points.sort(key=lambda p: p.ts)
-        return points[-limit:] if len(points) > limit else points
+        return points[:limit] if len(points) > limit else points
         
     except Exception as e:
         logger.debug("Error reading price history: %s", str(e), exc_info=True)

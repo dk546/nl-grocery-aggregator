@@ -249,9 +249,9 @@ def _find_cheaper_alternative(
         return None
     
     # Find cheaper alternatives
-    best_alternative = None
-    best_alt_price_per_unit = None
-    best_alt_price_eur = None
+    # Separate candidates by category match for better relevance
+    same_category_candidates = []
+    other_candidates = []
     
     for product in products:
         # Skip if it's the same product
@@ -281,16 +281,37 @@ def _find_cheaper_alternative(
             price_diff = current_price_per_unit - alt_price_per_unit
             if price_diff >= MIN_PRICE_DIFFERENCE_PER_UNIT:
                 is_cheaper = True
-                comparison_price = alt_price_per_unit
         else:
             # Fall back to total price comparison
             price_diff = current_price_eur - alt_price_eur
             if price_diff >= MIN_PRICE_DIFFERENCE_PER_UNIT:
                 is_cheaper = True
-                comparison_price = alt_price_eur
         
         if not is_cheaper:
             continue
+        
+        # Categorize by similarity - prefer same-category candidates
+        if _is_same_category_or_similar(basket_item, product):
+            same_category_candidates.append(product)
+        else:
+            other_candidates.append(product)
+    
+    # Prefer same-category candidates, fallback to others if none found
+    candidates_to_check = same_category_candidates if same_category_candidates else other_candidates
+    
+    if not candidates_to_check:
+        return None
+    
+    # Select best alternative from candidates (lowest per-unit price, then lowest total price)
+    best_alternative = None
+    best_alt_price_per_unit = None
+    best_alt_price_eur = None
+    
+    for product in candidates_to_check:
+        alt_price_eur = float(product.get("price_eur") or product.get("price", 0.0))
+        alt_price_per_unit = product.get("price_per_unit")
+        if alt_price_per_unit is not None:
+            alt_price_per_unit = float(alt_price_per_unit)
         
         # Select best alternative (lowest per-unit price, then lowest total price)
         if best_alternative is None:
@@ -341,6 +362,7 @@ def _find_cheaper_alternative(
             "line_total": current_line_total,
             "image_url": basket_item.get("image_url"),
             "health_tag": current_health,
+            "category": basket_item.get("category"),
         },
         "alternative": {
             "retailer": best_alternative.get("retailer", ""),
@@ -350,10 +372,258 @@ def _find_cheaper_alternative(
             "price_per_unit": best_alt_price_per_unit,
             "image_url": best_alternative.get("image_url"),
             "health_tag": alt_health,
+            "category": best_alternative.get("category"),
         },
         "estimated_line_total": round(estimated_line_total, 2),
         "estimated_savings": round(estimated_savings, 2),
         "type": suggestion_type,
+    }
+
+
+def _is_same_category_or_similar(current: Dict[str, Any], candidate: Dict[str, Any]) -> bool:
+    """
+    Check if two products are in the same category or have similar type.
+    
+    This helps prioritize more relevant alternatives in suggestions.
+    
+    Args:
+        current: Current basket item dictionary
+        candidate: Candidate product dictionary from search results
+        
+    Returns:
+        True if products are in the same category or have similar type tokens
+    """
+    # Prefer exact match on category if both have it
+    current_category = current.get("category") or ""
+    candidate_category = candidate.get("category") or ""
+    
+    if current_category and candidate_category:
+        if current_category.lower().strip() == candidate_category.lower().strip():
+            return True
+    
+    # Fallback: check if key tokens appear in both names
+    name_cur = (current.get("name") or "").lower()
+    name_cand = (candidate.get("name") or "").lower()
+    
+    # Common Dutch grocery category tokens
+    KEY_TOKENS = [
+        "pasta", "rijst", "melk", "kaas", "yoghurt", "brood", "tomaat", "banaan",
+        "kippen", "kip", "rundvlees", "varkensvlees", "vis", "zalm",
+        "appel", "peer", "sinaasappel", "citroen", "aardbei",
+        "wortel", "ui", "knoflook", "paprika", "komkommer", "sla",
+        "olie", "azijn", "mosterd", "mayonaise",
+        "suiker", "zout", "peper", "kruiden",
+        "chips", "koekjes", "chocolade",
+        "bier", "wijn", "frisdrank", "sap"
+    ]
+    
+    # Check if any token appears in both names
+    for token in KEY_TOKENS:
+        if token in name_cur and token in name_cand:
+            return True
+    
+    return False
+
+
+def _find_healthier_alternative(
+    basket_item: Dict[str, Any],
+    search_fn: Callable[[str, List[str], int, int, Optional[str], Optional[str]], Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    """
+    Find a healthier alternative for a single basket item.
+    
+    Only suggests alternatives that are healthier AND not more than MAX_PRICE_INCREASE_FOR_HEALTHIER
+    percentage more expensive than the current item.
+    
+    Args:
+        basket_item: Basket item dictionary
+        search_fn: Search function (aggregated_search)
+    
+    Returns:
+        Suggestion dictionary or None if no healthier alternative found
+    """
+    # Extract current item details
+    current_name = basket_item.get("name", "").strip()
+    current_retailer = basket_item.get("retailer", "")
+    current_product_id = str(basket_item.get("product_id", ""))
+    current_price_eur = float(basket_item.get("price_eur", 0.0))
+    current_price_per_unit = basket_item.get("price_per_unit")
+    if current_price_per_unit is not None:
+        current_price_per_unit = float(current_price_per_unit)
+    current_quantity = int(basket_item.get("quantity", 1))
+    current_line_total = float(basket_item.get("line_total", current_price_eur * current_quantity))
+    current_health = basket_item.get("health_tag") or "neutral"
+    
+    if not current_name or current_price_eur <= 0:
+        # Skip items without name or invalid price
+        return None
+    
+    # If already healthy, don't suggest a healthier alternative
+    if current_health == "healthy":
+        return None
+    
+    # Search for alternatives using the product name
+    # Sort by health to get healthier options first
+    try:
+        search_results = search_fn(
+            query=current_name,
+            retailers=["ah", "jumbo", "picnic", "dirk"],  # Search all retailers
+            size_per_retailer=20,
+            page=0,
+            sort_by="health",  # Get healthier options first
+            health_filter=None  # Don't filter by health for savings analysis
+        )
+    except Exception as e:
+        logger.debug("Search failed for '%s': %s", current_name, str(e))
+        return None
+    
+    if not search_results or "results" not in search_results:
+        return None
+    
+    products = search_results.get("results", [])
+    if not products:
+        return None
+    
+    # Find healthier alternatives within price tolerance
+    # Separate candidates by category match
+    same_category_candidates = []
+    other_candidates = []
+    
+    # Calculate maximum acceptable price (current + tolerance)
+    max_price_eur = current_price_eur * (1 + MAX_PRICE_INCREASE_FOR_HEALTHIER)
+    max_price_per_unit = None
+    if current_price_per_unit is not None:
+        max_price_per_unit = current_price_per_unit * (1 + MAX_PRICE_INCREASE_FOR_HEALTHIER)
+    
+    for product in products:
+        # Skip if it's the same product
+        product_id = str(product.get("id", ""))
+        product_id_clean = product_id.split(":")[-1] if ":" in product_id else product_id
+        current_product_id_clean = current_product_id.split(":")[-1] if ":" in current_product_id else current_product_id
+        
+        if product_id_clean == current_product_id_clean and product.get("retailer", "") == current_retailer:
+            # Same product - skip
+            continue
+        
+        # Get health and price information
+        alt_health = product.get("health_tag") or "neutral"
+        alt_price_eur = float(product.get("price_eur") or product.get("price", 0.0))
+        alt_price_per_unit = product.get("price_per_unit")
+        if alt_price_per_unit is not None:
+            alt_price_per_unit = float(alt_price_per_unit)
+        
+        if alt_price_eur <= 0:
+            continue
+        
+        # Check if healthier
+        if not _is_healthier(alt_health, current_health):
+            continue
+        
+        # Check price tolerance
+        is_within_price_tolerance = False
+        if current_price_per_unit is not None and alt_price_per_unit is not None:
+            # Compare per-unit prices
+            if alt_price_per_unit <= max_price_per_unit:
+                is_within_price_tolerance = True
+        else:
+            # Fall back to total price comparison
+            if alt_price_eur <= max_price_eur:
+                is_within_price_tolerance = True
+        
+        if not is_within_price_tolerance:
+            continue
+        
+        # Categorize by similarity
+        if _is_same_category_or_similar(basket_item, product):
+            same_category_candidates.append(product)
+        else:
+            other_candidates.append(product)
+    
+    # Prefer same-category candidates, fallback to others if none found
+    candidates_to_check = same_category_candidates if same_category_candidates else other_candidates
+    
+    if not candidates_to_check:
+        return None
+    
+    # Select best alternative (healthiest first, then cheapest if same health)
+    best_alternative = None
+    best_alt_price_eur = None
+    best_alt_price_per_unit = None
+    
+    for product in candidates_to_check:
+        alt_health = product.get("health_tag") or "neutral"
+        alt_price_eur = float(product.get("price_eur") or product.get("price", 0.0))
+        alt_price_per_unit = product.get("price_per_unit")
+        if alt_price_per_unit is not None:
+            alt_price_per_unit = float(alt_price_per_unit)
+        
+        if best_alternative is None:
+            best_alternative = product
+            best_alt_price_eur = alt_price_eur
+            best_alt_price_per_unit = alt_price_per_unit
+        else:
+            # Prefer healthier option, then cheaper if same health
+            best_alt_health = best_alternative.get("health_tag") or "neutral"
+            
+            if _is_healthier(alt_health, best_alt_health):
+                # New option is healthier - prefer it
+                best_alternative = product
+                best_alt_price_eur = alt_price_eur
+                best_alt_price_per_unit = alt_price_per_unit
+            elif alt_health == best_alt_health:
+                # Same health - prefer cheaper
+                if best_alt_price_per_unit is not None and alt_price_per_unit is not None:
+                    if alt_price_per_unit < best_alt_price_per_unit:
+                        best_alternative = product
+                        best_alt_price_eur = alt_price_eur
+                        best_alt_price_per_unit = alt_price_per_unit
+                elif alt_price_eur < best_alt_price_eur:
+                    best_alternative = product
+                    best_alt_price_eur = alt_price_eur
+                    best_alt_price_per_unit = alt_price_per_unit
+    
+    if best_alternative is None:
+        return None
+    
+    # Calculate price difference (may be positive if more expensive, but within tolerance)
+    estimated_line_total = best_alt_price_eur * current_quantity
+    price_diff = estimated_line_total - current_line_total
+    savings_amount = -price_diff if price_diff > 0 else None  # Negative savings = more expensive
+    
+    # Build health delta string
+    alt_health = best_alternative.get("health_tag") or "neutral"
+    health_delta_parts = []
+    if current_health != alt_health:
+        health_delta_parts.append(f"{current_health} → {alt_health}")
+    
+    # Build suggestion
+    return {
+        "current": {
+            "retailer": current_retailer,
+            "product_id": current_product_id,
+            "name": current_name,
+            "quantity": current_quantity,
+            "price_eur": current_price_eur,
+            "price_per_unit": current_price_per_unit,
+            "line_total": current_line_total,
+            "image_url": basket_item.get("image_url"),
+            "health_tag": current_health,
+            "category": basket_item.get("category"),
+        },
+        "alternative": {
+            "retailer": best_alternative.get("retailer", ""),
+            "product_id": str(best_alternative.get("id", "")),
+            "name": best_alternative.get("name", ""),
+            "price_eur": best_alt_price_eur,
+            "price_per_unit": best_alt_price_per_unit,
+            "image_url": best_alternative.get("image_url"),
+            "health_tag": alt_health,
+            "category": best_alternative.get("category"),
+        },
+        "estimated_line_total": round(estimated_line_total, 2),
+        "estimated_savings": round(savings_amount, 2) if savings_amount is not None else None,
+        "type": "healthier",
+        "health_delta": " → ".join(health_delta_parts) if health_delta_parts else None,
     }
 
 
@@ -479,4 +749,3 @@ def get_savings_opportunities_for_session(session_id: str) -> list[SavingsSugges
         # Fail quietly - suggestions are a nice-to-have
         logger.debug("Error computing savings opportunities: %s", str(e), exc_info=True)
         return []
-
