@@ -38,6 +38,12 @@ from utils.api_client import (
     get_price_history,
 )
 from utils.profile import HOUSEHOLD_PROFILES, get_profile_by_key
+from utils.preferences import (
+    get_user_preferences_from_session,
+    PREFERENCE_HEALTH_BALANCED,
+    PREFERENCE_HEALTH_FIRST,
+    PREFERENCE_BUDGET_FIRST,
+)
 from utils.retailers import get_retailer_display_name
 from ui.style import inject_global_css, section_header, pill_tag, image_card, render_footer
 
@@ -461,8 +467,54 @@ with side_col:
         suggestions = []
     
     if suggestions:
+        # Get user preferences and re-rank suggestions
+        prefs = get_user_preferences_from_session()
+        
+        def _score_suggestion(sugg) -> float:
+            """Score a suggestion based on user preferences."""
+            base = 0.0
+            s_type = getattr(sugg, "type", None) or getattr(sugg, "suggestion_type", None)
+            
+            # Default weights
+            if prefs.health_focus == PREFERENCE_HEALTH_BALANCED:
+                budget_w = 1.0
+                health_w = 1.0
+            elif prefs.health_focus == PREFERENCE_HEALTH_FIRST:
+                budget_w = 0.7
+                health_w = 1.5
+            elif prefs.health_focus == PREFERENCE_BUDGET_FIRST:
+                budget_w = 1.5
+                health_w = 0.7
+            else:
+                budget_w = health_w = 1.0
+            
+            score = 0.0
+            if s_type == "cheaper":
+                score += budget_w
+            elif s_type == "healthier":
+                score += health_w
+            elif s_type == "cheaper_and_healthier":
+                score += budget_w + health_w
+            
+            # Optional: small boost for larger savings_amount
+            savings = getattr(sugg, "savings_amount", None)
+            if isinstance(savings, (int, float)):
+                score += min(max(savings, 0.0), 5.0) * 0.1  # dampened boost
+            
+            return score
+        
+        # Re-rank suggestions by score (descending)
+        suggestions = sorted(suggestions, key=_score_suggestion, reverse=True)
+        
         st.markdown("### Smart suggestions")
-        st.caption("Small swaps that can save money or nudge the basket a bit healthier.")
+        
+        # Show preference-aware caption
+        if prefs.health_focus == PREFERENCE_HEALTH_FIRST:
+            st.caption("Sorted with your preference: **healthier choices first**.")
+        elif prefs.health_focus == PREFERENCE_BUDGET_FIRST:
+            st.caption("Sorted with your preference: **lowest prices first**.")
+        else:
+            st.caption("Sorted with a balance between health and price.")
         
         # Show at most 3 suggestions to avoid clutter
         for s in suggestions[:3]:

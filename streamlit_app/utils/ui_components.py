@@ -81,6 +81,24 @@ def render_backend_status(status: Optional[dict]) -> None:
         st.error("🔴 Backend offline / unreachable")
 
 
+def render_db_status(db_enabled: bool) -> None:
+    """
+    Display database connection status.
+    
+    Args:
+        db_enabled: Boolean indicating if database is enabled and connected.
+                    True means Postgres is being used, False means fallback mode.
+                    
+    Shows:
+        - 🟢 "Database: Connected" if db_enabled is True
+        - ⚪ "Database: Fallback mode" if db_enabled is False
+    """
+    if db_enabled:
+        st.success("🟢 Database: Connected")
+    else:
+        st.info("⚪ Database: Fallback mode")
+
+
 def render_product_summary(df: pd.DataFrame) -> None:
     """
     Render high-level product search summary metrics.

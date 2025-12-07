@@ -30,9 +30,17 @@ import api.config  # noqa: F401
 import streamlit as st
 
 from utils.api_client import get_health_status, get_cart_summary
-from utils.ui_components import render_backend_status, render_basket_summary_chip
+from utils.ui_components import render_backend_status, render_basket_summary_chip, render_db_status
 from utils.session import get_or_create_session_id
 from utils.profile import HOUSEHOLD_PROFILES, DEFAULT_PROFILE_KEY, get_profile_by_key
+from utils.preferences import (
+    get_user_preferences_from_session,
+    save_user_preferences_to_session,
+    ALLOWED_DIETARY_TAGS,
+    PREFERENCE_HEALTH_BALANCED,
+    PREFERENCE_HEALTH_FIRST,
+    PREFERENCE_BUDGET_FIRST,
+)
 from ui.style import inject_global_css, section_header, image_card, render_footer, get_random_asset_image
 
 # Initialize session ID early for cart operations
@@ -69,6 +77,15 @@ with st.sidebar:
     st.markdown(f"#### {status_emoji} System status")
     st.caption("API health & supermarket connectors")
     render_backend_status(backend_status)
+    
+    # Database status
+    db_enabled = False
+    if backend_status:
+        # Get db_enabled from health response
+        raw_status = backend_status.get("raw", {})
+        db_enabled = raw_status.get("db_enabled", False)
+    render_db_status(db_enabled)
+    
     st.markdown('</div>', unsafe_allow_html=True)
     
     st.divider()
@@ -109,6 +126,57 @@ with st.sidebar:
     hint_parts.append(servings_info)
     if hint_parts:
         st.caption(" • ".join(hint_parts))
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    st.divider()
+    
+    # Food Preferences card
+    st.markdown('<div class="nlga-card nlga-card--sidebar">', unsafe_allow_html=True)
+    st.markdown("#### Food preferences")
+    
+    prefs = get_user_preferences_from_session()
+    
+    health_focus_label = st.radio(
+        "What should we prioritize?",
+        options=[
+            PREFERENCE_HEALTH_BALANCED,
+            PREFERENCE_HEALTH_FIRST,
+            PREFERENCE_BUDGET_FIRST,
+        ],
+        format_func=lambda v: {
+            PREFERENCE_HEALTH_BALANCED: "A bit of both",
+            PREFERENCE_HEALTH_FIRST: "Healthier choices first",
+            PREFERENCE_BUDGET_FIRST: "Lowest prices first",
+        }.get(v, v),
+        index=[
+            PREFERENCE_HEALTH_BALANCED,
+            PREFERENCE_HEALTH_FIRST,
+            PREFERENCE_BUDGET_FIRST,
+        ].index(prefs.health_focus),
+        help="We'll use this to sort smart suggestions and interpret your health insights.",
+    )
+    
+    dietary_selection = st.multiselect(
+        "Dietary preferences (optional)",
+        options=ALLOWED_DIETARY_TAGS,
+        default=prefs.dietary_tags,
+        format_func=lambda v: {
+            "vegetarian": "Vegetarian",
+            "vegan": "Vegan",
+            "halal": "Halal",
+            "no_pork": "No pork",
+            "lactose_free": "Lactose-free",
+            "gluten_free": "Gluten-free",
+            "low_sugar": "Low sugar",
+        }.get(v, v),
+        help="We don't filter products yet, but we'll use this in your insights and future recipe suggestions.",
+    )
+    
+    # Save back to session
+    prefs.health_focus = health_focus_label
+    prefs.dietary_tags = dietary_selection
+    save_user_preferences_to_session(prefs)
+    
     st.markdown('</div>', unsafe_allow_html=True)
     
     st.divider()

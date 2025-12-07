@@ -21,8 +21,7 @@ if str(project_root) not in sys.path:
 import streamlit as st
 
 from utils.api_client import get_health_status, get_backend_url
-from utils.ui_components import render_header, render_backend_status
-from ui.style import image_card, render_footer
+from utils.ui_components import render_header, render_backend_status, render_db_status
 
 render_header(
     "🔧 System Status",
@@ -73,6 +72,61 @@ else:
     st.warning("""
     ⚠️ The backend API is currently unreachable. Some features may not work properly.
     Please check your connection or try again later.
+    """)
+
+st.divider()
+
+# Database Status Section
+st.subheader("Database Status")
+
+# Get database status from health response
+db_enabled = False
+cart_sessions_count = 0
+price_history_count = 0
+
+if backend_status:
+    raw_status = backend_status.get("raw", {})
+    db_enabled = raw_status.get("db_enabled", False)
+
+# Display database status
+render_db_status(db_enabled)
+
+if db_enabled:
+    # Try to get database statistics
+    try:
+        # Import here to avoid issues if DB module has import errors
+        import sys
+        from pathlib import Path
+        project_root = Path(__file__).parent.parent.parent
+        if str(project_root) not in sys.path:
+            sys.path.insert(0, str(project_root))
+        
+        from aggregator.db import get_cart_sessions_count, get_price_history_count
+        
+        cart_sessions_count = get_cart_sessions_count()
+        price_history_count = get_price_history_count()
+        
+        # Display statistics
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.metric("Cart Sessions", cart_sessions_count)
+        
+        with col2:
+            st.metric("Price History Records", price_history_count)
+            
+    except Exception as e:
+        st.warning(f"⚠️ Could not retrieve database statistics: {e}")
+else:
+    st.info("""
+    **Fallback Storage Mode**
+    
+    Database persistence is not enabled. The app is using:
+    - **In-memory storage** for shopping carts (data lost on server restart)
+    - **JSONL file** for price history (data persists until server restart)
+    
+    To enable Postgres persistence, set the `DATABASE_URL` environment variable
+    and install SQLAlchemy: `pip install sqlalchemy psycopg2-binary`
     """)
 
 st.divider()

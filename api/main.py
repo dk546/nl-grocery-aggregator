@@ -84,6 +84,22 @@ app = FastAPI(
 # Valid retailer identifiers
 VALID_RETAILERS = {"ah", "jumbo", "picnic", "dirk"}
 
+# Initialize database if DATABASE_URL is set
+try:
+    from aggregator.db import db_is_enabled, init_db
+    
+    if db_is_enabled():
+        try:
+            init_db()
+        except Exception as e:
+            # Log error but don't crash the app - fallback to in-memory/file storage
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Database initialization failed, using fallback storage: {e}")
+except ImportError:
+    # SQLAlchemy not installed - that's fine, we'll use fallback storage
+    pass
+
 
 def get_session(x_session_id: Optional[str] = Header(None, alias="X-Session-ID")) -> str:
     """
@@ -987,16 +1003,27 @@ def health():
     Health check endpoint for monitoring and status checks.
     
     Returns:
-        Dictionary with status, API metadata, and uptime information.
+        Dictionary with status, API metadata, uptime information, and database status.
         Always returns 200 OK if the endpoint is reachable.
     """
     uptime_seconds = int(time.time() - _APP_START_TIME)
+    
+    # Check database status
+    db_enabled = False
+    try:
+        from aggregator.db import db_is_enabled
+        db_enabled = db_is_enabled()
+    except Exception:
+        # If db_is_enabled() raises any error, treat as fallback mode
+        db_enabled = False
+    
     return {
         "status": "ok",
         "name": "NL Grocery Aggregator API",
         "version": "1.0.0",
         "description": "Backend API for aggregating grocery products from Albert Heijn, Jumbo, Picnic, and Dirk",
         "uptime_seconds": uptime_seconds,
+        "db_enabled": db_enabled,
     }
 
 

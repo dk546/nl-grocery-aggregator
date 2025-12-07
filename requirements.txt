@@ -11,5 +11,12 @@ requests
 streamlit
 pandas
 
+# Optional database dependencies (only needed if DATABASE_URL is set)
+# sqlalchemy
+# psycopg2-binary  # For Postgres support
+
 # Dev dependencies (for testing)
 pytest
+
+local_dev.db
+*.db

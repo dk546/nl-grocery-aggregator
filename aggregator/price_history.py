@@ -124,4 +124,3 @@ def get_price_history(product_id: str, retailer: str, limit: int = 30) -> List[P
     except Exception as e:
         logger.debug("Error reading price history: %s", str(e), exc_info=True)
         return []
-

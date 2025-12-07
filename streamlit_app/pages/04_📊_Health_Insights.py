@@ -25,6 +25,11 @@ import streamlit as st
 from utils.session import get_or_create_session_id
 from utils.api_client import view_cart_backend
 from utils.profile import HOUSEHOLD_PROFILES, get_profile_by_key
+from utils.preferences import (
+    get_user_preferences_from_session,
+    PREFERENCE_HEALTH_FIRST,
+    PREFERENCE_BUDGET_FIRST,
+)
 from ui.style import inject_global_css, section_header, pill_tag, image_card, render_footer
 
 # Inject global CSS styling
@@ -91,6 +96,35 @@ profile = HOUSEHOLD_PROFILES.get(profile_key) if profile_key else None
 if profile:
     st.caption(
         f"For your **{profile.label.lower()}** household, use this as a rough guide when planning meals."
+    )
+
+# Get user preferences for personalized messaging
+prefs = get_user_preferences_from_session()
+
+# Preference-aware narrative box
+with st.container():
+    if prefs.health_focus == PREFERENCE_HEALTH_FIRST:
+        st.info(
+            "You've told us you care most about **healthier choices**. "
+            "Use this page to reduce the number of less healthy items in your basket and increase healthy ones over time."
+        )
+    elif prefs.health_focus == PREFERENCE_BUDGET_FIRST:
+        st.info(
+            "You've told us you care most about **staying on budget**. "
+            "We'll still highlight health patterns, but focus on small, realistic improvements rather than strict rules."
+        )
+    else:
+        st.info(
+            "You've chosen a **balanced focus** between health and price. "
+            "Try swapping a few less healthy items for healthier alternatives without increasing your total spend too much."
+        )
+
+# Show dietary preferences if set
+if prefs.dietary_tags:
+    st.caption(
+        "Dietary preferences noted: "
+        + ", ".join(prefs.dietary_tags)
+        + ". We'll gradually use this to refine suggestions and recipes."
     )
 
 # Metrics band (top row)
