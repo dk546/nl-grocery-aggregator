@@ -37,8 +37,17 @@ from aggregator.templates import (
     get_template_for_session,
     delete_template_for_session,
 )
-from aggregator.events import log_event
+from aggregator.events import (
+    log_event,
+    log_search_performed,
+    log_cart_items_added,
+    log_cart_items_removed,
+    log_cart_cleared,
+    log_swap_clicked,
+    log_recipe_viewed,
+)
 from aggregator.connectors.ah_connector import AHConnector
+from api.routers import analytics
 from aggregator.connectors.jumbo_connector import JumboConnector
 from aggregator.connectors.picnic_connector import PicnicConnector
 from api.schemas import (
@@ -78,6 +87,10 @@ app = FastAPI(
             "name": "health",
             "description": "Health check and monitoring endpoints.",
         },
+        {
+            "name": "analytics",
+            "description": "Event analytics and metrics endpoints.",
+        },
     ],
 )
 
@@ -99,6 +112,9 @@ try:
 except ImportError:
     # SQLAlchemy not installed - that's fine, we'll use fallback storage
     pass
+
+# Register routers
+app.include_router(analytics.router)
 
 
 def get_session(x_session_id: Optional[str] = Header(None, alias="X-Session-ID")) -> str:
@@ -182,6 +198,7 @@ def search(
         None,
         description="Filter by health tag: 'healthy' or 'unhealthy' (optional)"
     ),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-ID", description="Session identifier (optional)"),
 ) -> SearchResponse:
     """
     Search for products across multiple retailers.
@@ -269,33 +286,14 @@ def search(
         # Convert dictionaries to ProductBase models
         products = [dict_to_product(p) for p in results_dicts]
         
-        # Log search event
-        try:
-            session = get_session(None)  # Try to get session if available (may be None for search)
-            log_event(
-                "search_performed",
-                session_id=session,
-                payload={
-                    "query": q,
-                    "retailers": retailer_list,
-                    "result_count": len(products),
-                    "size": size,
-                    "page": page,
-                    "sort_by": sort_by or "price",
-                    "health_filter": health_filter,
-                },
-            )
-        except Exception:
-            # Non-blocking: log search even if session extraction fails
-            log_event(
-                "search_performed",
-                session_id=None,
-                payload={
-                    "query": q,
-                    "retailers": retailer_list,
-                    "result_count": len(products),
-                },
-            )
+        # Log search event (non-blocking)
+        # Session ID: use header if available (client.host fallback would require Request injection)
+        log_search_performed(
+            session_id=x_session_id,
+            query=q,
+            retailer_codes=retailer_list,
+            result_count=len(products),
+        )
         
         return SearchResponse(results=products, connectors_status=connectors_status)
     except RuntimeError as e:
@@ -379,22 +377,13 @@ def add_item(
         
         cart = add_to_cart(session, cart_item.model_dump())
         
-        # Log cart item addition event
-        try:
-            log_event(
-                "cart_items_added",
-                session_id=session,
-                payload={
-                    "retailer": cart_item.retailer,
-                    "product_id": cart_item.product_id,
-                    "name": cart_item.name,
-                    "quantity": cart_item.quantity,
-                    "price_eur": cart_item.price_eur,
-                    "health_tag": cart_item.health_tag,
-                },
-            )
-        except Exception:
-            pass  # Non-blocking
+        # Log cart item addition event (non-blocking)
+        log_cart_items_added(
+            session_id=session,
+            retailer=cart_item.retailer,
+            count=cart_item.quantity,
+            item_ids=[cart_item.product_id],
+        )
         
         # Convert Cart to CartView format with CartItemOut (includes line_total)
         items_out = [
@@ -482,19 +471,13 @@ def remove_item(
     try:
         cart = remove_from_cart(session, retailer_lower, product_id, qty)
         
-        # Log cart item removal event
-        try:
-            log_event(
-                "cart_items_removed",
-                session_id=session,
-                payload={
-                    "retailer": retailer_lower,
-                    "product_id": product_id,
-                    "quantity_removed": qty,
-                },
-            )
-        except Exception:
-            pass  # Non-blocking
+        # Log cart item removal event (non-blocking)
+        log_cart_items_removed(
+            session_id=session,
+            retailer=retailer_lower,
+            count=qty,
+            item_ids=[product_id],
+        )
         
         # Convert Cart to CartView format with CartItemOut (includes line_total)
         items_out = [
@@ -765,19 +748,16 @@ def get_basket_savings(
             suggestions=suggestions
         )
         
-        # Log savings analysis event
-        try:
-            log_event(
-                "savings_analysis_run",
-                session_id=session,
-                payload={
-                    "suggestions_count": len(suggestions),
-                    "potential_savings_total": float(savings_result.get("potential_savings_total", 0.0)),
-                    "basket_items_count": len(cart.items),
-                },
-            )
-        except Exception:
-            pass  # Non-blocking
+        # Log savings analysis event (non-blocking, already handled in log_event)
+        log_event(
+            "savings_analysis_run",
+            session_id=session,
+            payload={
+                "suggestions_count": len(suggestions),
+                "potential_savings_total": float(savings_result.get("potential_savings_total", 0.0)),
+                "basket_items_count": len(cart.items),
+            },
+        )
         
         return basket_savings_response
         
@@ -935,8 +915,19 @@ def apply_basket_template(
             detail="Template not found."
         )
     
-    # Replace cart with template items (logging happens inside replace_cart)
+    # Get cart before replacing to log clear event
+    cart_before = get_cart(session)
+    previous_count = len(cart_before.items)
+    
+    # Replace cart with template items (this clears and replaces)
     replace_cart(session, template.items)
+    
+    # Log cart cleared if there were items before
+    if previous_count > 0:
+        log_cart_cleared(
+            session_id=session,
+            previous_count=previous_count,
+        )
     
     # Log template applied event
     try:
@@ -1068,6 +1059,89 @@ def price_history(retailer: str, product_id: str, limit: int = Query(30, ge=1, l
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving price history: {str(e)}"
+        ) from e
+
+
+@app.post(
+    "/cart/swap",
+    response_model=CartView,
+    tags=["cart"],
+    summary="Apply a smart swap suggestion",
+    description="Replace a cart item with a suggested alternative (cheaper/healthier). This is a placeholder endpoint for MVP.",
+)
+def apply_swap(
+    from_item_id: str = Query(..., description="Product ID of item to replace"),
+    to_item_id: str = Query(..., description="Product ID of alternative item"),
+    retailer: Optional[str] = Query(None, description="Retailer identifier (optional)"),
+    savings: Optional[float] = Query(None, ge=0, description="Estimated savings amount in euros (optional)"),
+    health_delta: Optional[float] = Query(None, description="Health improvement score (optional)"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-ID", description="Session identifier (required)"),
+) -> CartView:
+    """
+    Apply a smart swap suggestion by replacing one cart item with another.
+    
+    This is a placeholder/MVP endpoint. Currently, it logs the swap event but
+    does not actually modify the cart. Full implementation would:
+    1. Remove the from_item from cart
+    2. Add the to_item to cart
+    3. Return updated cart view
+    
+    Args:
+        from_item_id: Product ID of the item to replace
+        to_item_id: Product ID of the alternative item
+        retailer: Retailer identifier (optional)
+        savings: Estimated savings in euros (optional)
+        health_delta: Health improvement score (optional)
+        x_session_id: Session ID from X-Session-ID header (required)
+        
+    Returns:
+        CartView with current cart contents (no actual swap performed in MVP)
+        
+    Raises:
+        HTTPException 400: If session ID is not provided
+        HTTPException 500: If there's an error
+    """
+    session = get_session(x_session_id)
+    
+    # Log swap clicked event (non-blocking, already handled in log_swap_clicked)
+    log_swap_clicked(
+        session_id=session,
+        from_item_id=from_item_id,
+        to_item_id=to_item_id,
+        retailer=retailer,
+        savings_amount=savings,
+        health_delta=health_delta,
+    )
+    
+    # MVP: Just return current cart without actually swapping
+    # TODO: Implement actual swap logic (remove from_item, add to_item)
+    try:
+        cart = get_cart(session)
+        
+        # Convert Cart to CartView format
+        items_out = [
+            CartItemOut(
+                retailer=item.retailer,
+                product_id=item.product_id,
+                name=item.name,
+                price_eur=item.price_eur,
+                quantity=item.quantity,
+                image_url=item.image_url,
+                health_tag=item.health_tag,
+                line_total=item.total_price
+            )
+            for item in cart.items.values()
+        ]
+        
+        return CartView(
+            items=items_out,
+            total_price=cart.total(),
+            total_by_retailer=cart.total_by_retailer()
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving cart: {str(e)}"
         ) from e
 
 

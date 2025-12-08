@@ -13,6 +13,13 @@ A full-stack application that aggregates grocery product search results from mul
 - **Savings Finder**: Analyze basket items and find cheaper alternatives across retailers
 - **Saved Baskets/Templates**: Save and reuse basket configurations as named templates
 - **Event Logging**: Internal event logging system for analytics (search, cart, savings, templates)
+  - Postgres-backed persistence (when `DATABASE_URL` is set) with file-based fallback
+  - Non-blocking event logging that never breaks the application
+  - Tracks: search events, cart operations, smart swaps, recipe views, template operations
+- **Analytics API**: REST endpoints for querying event analytics
+  - `GET /analytics/events/recent` - Retrieve recent events
+  - `GET /analytics/events/counts` - Get event type counts over time windows
+  - Gracefully handles database disabled state with safe fallbacks
 - **Search Caching**: TTL-based in-memory cache for search results (60-second TTL)
 - **Delivery Slots**: Retrieve available delivery time slots (currently Picnic only)
 - **Health Check Endpoint**: `/health` endpoint for monitoring and status checks with uptime information
@@ -42,6 +49,12 @@ A full-stack application that aggregates grocery product search results from mul
   - Automatically finds the healthiest available products for each ingredient
   - Falls back to cheapest option if health scores are tied
   - Best-effort matching: adds what it can find, reports missing ingredients
+- **Analytics Dashboard** (Internal): Internal analytics dashboard for event visualization
+  - Event counts visualization with bar charts
+  - Recent events table with timestamp, event type, session ID, and payload
+  - Time window selection (6 hours to 7 days)
+  - Gracefully handles database disabled state
+  - Shows backend and database status
 - **System Status**: Backend health monitoring and API documentation links
 - **Brand Footer**: Consistent footer across all pages with brand colors and information
 
@@ -62,14 +75,18 @@ nl-grocery-aggregator/
 │   ├── search.py           # Aggregated search logic
 │   ├── savings.py          # Savings finder logic
 │   ├── templates.py        # Saved basket templates
-│   ├── events.py            # Event logging utility
+│   ├── events.py           # Event logging utility (DB + file fallback)
+│   ├── db.py               # Database layer (Postgres persistence for carts, price history, events)
 │   └── utils/              # Utility modules
 │       ├── cache.py        # TTL cache for search results
 │       └── units.py        # Unit normalization helpers
 ├── api/                    # FastAPI application
 │   ├── main.py             # FastAPI app and endpoints
 │   ├── schemas.py          # Pydantic request/response schemas
-│   └── config.py           # Configuration management
+│   ├── config.py           # Configuration management
+│   └── routers/            # API routers
+│       ├── __init__.py
+│       └── analytics.py    # Analytics endpoints router
 ├── streamlit_app/          # Streamlit frontend application
 │   ├── app.py              # Main Streamlit entrypoint
 │   ├── pages/              # Multi-page Streamlit app pages
@@ -78,6 +95,7 @@ nl-grocery-aggregator/
 │   │   ├── 03_🧺_My_Basket.py
 │   │   ├── 04_📊_Health_Insights.py
 │   │   ├── 05_🍳_Recipes.py
+│   │   ├── 06_📈_Analytics.py
 │   │   └── 99_🔧_System_Status.py
 │   ├── assets/             # Hero images and marketing assets
 │   │   └── *.jpg           # Healthy food images (Unsplash)
@@ -166,6 +184,12 @@ BACKEND_URL=http://localhost:8000
 
 # OpenAI API Key (optional - for AI Health Coach feature in Health Insights page)
 OPENAI_API_KEY=your_openai_api_key_here
+
+# Database Configuration (optional - enables Postgres persistence for carts, price history, and events)
+# When set, cart data, price history, and event analytics are persisted to Postgres
+# When not set, falls back to in-memory storage (carts), JSONL files (price history, events)
+DATABASE_URL=postgresql://user:password@localhost:5432/nl_grocery_aggregator
+# Example for Render: DATABASE_URL=postgresql://user:pass@dpg-xxx.oregon-postgres.render.com/dbname
 ```
 
 **Important:** 
@@ -186,6 +210,7 @@ OPENAI_API_KEY=your_openai_api_key_here
 | `PICNIC_COUNTRY_CODE` | No | `NL` | Picnic country code |
 | `BACKEND_URL` | No | `http://localhost:8000` | Backend API URL (used by Streamlit frontend for all API calls, including `/health` endpoint) |
 | `OPENAI_API_KEY` | No | - | OpenAI API key for AI Health Coach feature (optional) |
+| `DATABASE_URL` | No | - | PostgreSQL connection string for persistent storage (carts, price history, events). When not set, uses in-memory/file-based fallback |
 
 *Required only if you want to use the corresponding retailer. You can use the API with just one retailer if desired.
 
@@ -376,6 +401,20 @@ The API will be available at http://127.0.0.1:8000
   - Best-effort matching: adds what can be found, reports missing ingredients
 - **Recipe Details**: View ingredients, instructions, prep time, and difficulty for each recipe
 
+### Analytics Dashboard
+- **Event Counts Visualization**: Bar chart showing event types and counts
+  - Time window selection (6, 12, 24, 48, 72, or 168 hours)
+  - Sorted by count (most frequent events first)
+  - Table view for detailed counts
+- **Recent Events Table**: View most recent analytics events
+  - Limit selection (50, 100, 200, or 500 events)
+  - Displays timestamp, event type, session ID, and payload
+  - Payload truncated for readability
+- **Database Status**: Shows backend and database connection status
+  - Clear indication when database persistence is enabled or disabled
+  - Graceful degradation with informative messages
+- **Internal Use Only**: Clearly marked as demo/experimental feature
+
 ### System Status
 - **Backend Health**: Monitor backend API status and connectivity via `/health` endpoint
   - Shows real-time backend status (online/offline) in sidebar and System Status page
@@ -515,6 +554,60 @@ Get available delivery slots for a retailer:
 ```bash
 curl "http://127.0.0.1:8000/delivery/slots?retailer=picnic"
 ```
+
+### Analytics Endpoints
+
+**Get recent events:**
+```bash
+curl "http://127.0.0.1:8000/analytics/events/recent?limit=100"
+```
+
+**Response:**
+```json
+{
+  "db_enabled": true,
+  "events": [
+    {
+      "ts": "2024-01-15T10:30:00.123456",
+      "event_type": "search_performed",
+      "session_id": "abc123",
+      "payload": {
+        "query": "melk",
+        "retailers": ["ah", "jumbo"],
+        "result_count": 10
+      }
+    }
+  ]
+}
+```
+
+**Get event type counts:**
+```bash
+curl "http://127.0.0.1:8000/analytics/events/counts?since_hours=24"
+```
+
+**Response:**
+```json
+{
+  "db_enabled": true,
+  "since_hours": 24,
+  "counts": {
+    "search_performed": 120,
+    "cart_item_added": 40,
+    "cart_item_removed": 5,
+    "swap_clicked": 3,
+    "recipe_viewed": 8
+  }
+}
+```
+
+**Query Parameters:**
+- `/analytics/events/recent`:
+  - `limit` (optional): Maximum number of events to return (1-1000). Default: `100`
+- `/analytics/events/counts`:
+  - `since_hours` (optional): Number of hours to look back (1-168). Default: `24`
+
+**Note:** These endpoints always return a valid response, even when the database is disabled. The `db_enabled` field indicates whether database persistence is active.
 
 ## Production Deployment
 
@@ -659,12 +752,15 @@ Each retailer has a dedicated connector that:
 
 ## Limitations
 
-- **In-memory Storage**: Cart data and templates are stored in memory and will be lost on server restart
+- **Storage**: 
+  - Cart data and templates use in-memory storage by default (lost on server restart)
+  - Optional Postgres persistence available when `DATABASE_URL` is set
+  - Event logging uses Postgres when available, falls back to file-based logging (`events.log`)
 - **Session-based**: Templates and carts are tied to session IDs (no user accounts yet)
 - **No Authentication**: API endpoints do not require authentication (development only)
 - **Rate Limiting**: No rate limiting implemented (be respectful of retailer APIs)
 - **Delivery Slots**: Only Picnic delivery slots are currently implemented
-- **Event Logging**: Events are logged to a local file (`events.log`) and are not persistent across restarts
+- **Analytics**: Analytics dashboard is for internal/demo use only; not production-grade
 
 ## License
 

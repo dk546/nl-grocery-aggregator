@@ -18,8 +18,9 @@ When DATABASE_URL is not set:
 import os
 import logging
 import time
+import json
 from datetime import datetime
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict, Any
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +31,7 @@ DB_ENABLED = bool(DATABASE_URL)
 # SQLAlchemy imports (optional - only used if DB_ENABLED)
 if DB_ENABLED:
     try:
-        from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, ForeignKey, Index
+        from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, ForeignKey, Index, Text
         from sqlalchemy.orm import declarative_base, sessionmaker, Session, relationship
         from sqlalchemy.sql import func
         SQLALCHEMY_AVAILABLE = True
@@ -116,6 +117,21 @@ if DB_ENABLED and SQLALCHEMY_AVAILABLE and Base is not None:
         # Composite index for faster queries
         __table_args__ = (
             Index("idx_price_history_lookup", "product_id", "retailer", "ts"),
+        )
+    
+    class EventRow(Base):
+        """Events table - stores analytics events for user actions."""
+        __tablename__ = "events"
+        
+        id = Column(Integer, primary_key=True, index=True)
+        ts = Column(DateTime, nullable=False, index=True)  # UTC timestamp
+        session_id = Column(String(255), nullable=True, index=True)
+        event_type = Column(String(100), nullable=False, index=True)
+        payload = Column(Text, nullable=True)  # JSON string
+        
+        # Index for faster queries by event_type and timestamp
+        __table_args__ = (
+            Index("idx_event_type_ts", "event_type", "ts"),
         )
 
 
@@ -425,6 +441,130 @@ def get_price_history_count() -> int:
     except Exception as e:
         logger.debug(f"Error counting price history records: {e}")
         return 0
+    finally:
+        db.close()
+
+
+# ============================================================================
+# Events Repository Functions
+# ============================================================================
+
+def db_log_event(
+    event_type: str,
+    session_id: Optional[str],
+    payload: Optional[Dict[str, Any]],
+) -> None:
+    """
+    Insert a single event row into the database.
+    
+    This function is designed to fail silently - any errors are logged but
+    do not propagate, ensuring analytics never break the application.
+    
+    Args:
+        event_type: Event type/name (e.g., "search_performed", "cart_item_added")
+        session_id: Session identifier (optional)
+        payload: Event-specific data dictionary (will be stored as JSON string)
+    """
+    if not db_is_enabled():
+        return
+    
+    db = None
+    try:
+        db = get_db_session()
+        
+        # Convert payload dict to JSON string
+        payload_json = json.dumps(payload) if payload else None
+        
+        # Create UTC datetime from current time
+        event_ts = datetime.utcnow()
+        
+        event_row = EventRow(
+            ts=event_ts,
+            session_id=session_id,
+            event_type=event_type,
+            payload=payload_json,
+        )
+        
+        db.add(event_row)
+        db.commit()
+    except Exception as e:
+        if db:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+        logger.debug(f"Error logging event to database: {e}")
+        # Fail silently - analytics should never break the app
+    finally:
+        if db:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+
+def db_get_recent_events(limit: int = 100) -> List[Any]:
+    """
+    Return most recent events ordered by timestamp (descending).
+    
+    Args:
+        limit: Maximum number of events to return (default: 100)
+        
+    Returns:
+        List of EventRow objects, or empty list if DB disabled or on error
+    """
+    if not db_is_enabled():
+        return []
+    
+    db = get_db_session()
+    try:
+        # EventRow is only available when DB_ENABLED is True
+        if DB_ENABLED and SQLALCHEMY_AVAILABLE and Base is not None:
+            events = db.query(EventRow).order_by(EventRow.ts.desc()).limit(limit).all()
+            return events
+        else:
+            return []
+    except Exception as e:
+        logger.debug(f"Error getting recent events from database: {e}")
+        return []
+    finally:
+        db.close()
+
+
+def db_get_event_counts(
+    since_hours: int = 24,
+) -> Dict[str, int]:
+    """
+    Return a dictionary of event type counts over the last N hours.
+    
+    Args:
+        since_hours: Number of hours to look back (default: 24)
+        
+    Returns:
+        Dictionary mapping event_type to count, or empty dict if DB disabled or on error
+    """
+    if not db_is_enabled():
+        return {}
+    
+    db = get_db_session()
+    try:
+        # Calculate cutoff time
+        from datetime import timedelta
+        cutoff_time = datetime.utcnow() - timedelta(hours=since_hours)
+        
+        # Query events since cutoff time
+        events = db.query(EventRow).filter(EventRow.ts >= cutoff_time).all()
+        
+        # Count by event_type
+        counts: Dict[str, int] = {}
+        for event in events:
+            event_type = event.event_type
+            counts[event_type] = counts.get(event_type, 0) + 1
+        
+        return counts
+    except Exception as e:
+        logger.debug(f"Error getting event counts from database: {e}")
+        return {}
     finally:
         db.close()
 

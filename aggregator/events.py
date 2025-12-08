@@ -1,73 +1,258 @@
+# aggregator/events.py
 """
-Internal event logging utility for tracking key user actions.
+Event logging for NL Grocery Aggregator.
 
-This module provides lightweight, non-blocking event logging for analytics purposes.
-Events are logged as JSON lines to a local file for later processing/analysis.
+Responsibilities:
+- Provide a single log_event(...) function that:
+  - Tries to write events to the DB via db_log_event() when DB is enabled.
+  - Always writes a JSONL record to events.log for backward compatibility.
+  - Never raises exceptions (analytics are strictly non-blocking).
 
-Note: This is a simple MVP implementation. In production, this should be replaced
-with a proper logging infrastructure (e.g., structured logging to a database,
-event streaming service, or analytics platform).
-
-Key principles:
-- Non-blocking: Logging failures should never break the application
-- Structured: Events are logged as JSON for easy parsing
-- Lightweight: Minimal overhead on request processing
+- Provide small helper functions for common event types:
+  - log_search_performed(...)
+  - log_cart_items_added(...)
+  - log_cart_items_removed(...)
+  - log_swap_clicked(...)
+  - log_recipe_viewed(...)
 """
+
+from __future__ import annotations
 
 import json
-import time
-from typing import Any, Dict, Optional
+import logging
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
-# Event log file path (relative to project root)
-# In production, this should be configurable or use proper logging infrastructure
-EVENT_LOG_FILE = "events.log"
+from .db import db_is_enabled, db_log_event
+
+logger = logging.getLogger(__name__)
+
+# Keep file-based MVP behavior: JSONL file with one event per line.
+# If you previously had a different path, adjust this constant to match.
+EVENT_LOG_FILE = Path("events.log")
+
+
+def _ensure_log_file_directory() -> None:
+    """
+    Ensure the directory for EVENT_LOG_FILE exists.
+    Swallow all exceptions to keep logging non-blocking.
+    """
+    try:
+        EVENT_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        # Non-critical: if this fails, we'll try writing anyway and swallow errors later.
+        pass
+
+
+def _write_to_file(record: Dict[str, Any]) -> None:
+    """
+    Append a single JSON record to events.log as JSONL.
+    Never raise exceptions.
+    """
+    try:
+        _ensure_log_file_directory()
+        with EVENT_LOG_FILE.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except Exception as exc:
+        # Last-resort: log at debug level, never raise.
+        logger.debug("Failed to write event to file fallback: %s", exc)
 
 
 def log_event(
     event: str,
-    session_id: Optional[str] = None,
+    session_id: Optional[str],
     payload: Optional[Dict[str, Any]] = None,
 ) -> None:
     """
-    Log an event as a JSON line.
-    
-    Events are logged in a structured format suitable for later analysis:
-    {
-        "ts": timestamp (Unix time),
-        "event": event name (e.g., "search_performed", "cart_items_added"),
-        "session_id": session identifier (if available),
-        "payload": event-specific data dictionary
-    }
-    
-    Args:
-        event: Event name/type (e.g., "search_performed", "cart_items_added")
-        session_id: Session identifier (optional)
-        payload: Event-specific data dictionary (optional)
-    
-    Examples:
-        >>> log_event("search_performed", session_id="abc123", payload={"query": "melk", "result_count": 10})
-        >>> log_event("cart_items_added", session_id="abc123", payload={"retailer": "ah", "quantity": 2})
-    
-    Note:
-        This function is designed to fail silently. If logging fails for any reason
-        (file permission errors, disk full, etc.), the exception is caught and ignored
-        to ensure analytics never break the application.
-    """
-    try:
-        record = {
-            "ts": time.time(),
-            "event": event,
-            "session_id": session_id,
-            "payload": payload or {},
-        }
-        
-        # Write as JSON line (one JSON object per line, UTF-8 encoded)
-        line = json.dumps(record, ensure_ascii=False)
-        
-        with open(EVENT_LOG_FILE, "a", encoding="utf-8") as f:
-            f.write(line + "\n")
-    except Exception:
-        # Fail silently; analytics should never break the app
-        # In production, you might want to log this to application logs at DEBUG level
-        pass
+    Core event logger.
 
+    Behavior:
+    - Build a record with keys: ts, event, session_id, payload.
+      This preserves the original file-based structure.
+    - If db_is_enabled() is True, attempt to log to DB via db_log_event().
+      Any DB error is swallowed and we still write to file.
+    - Always write the JSONL record to events.log for debugging / backward compatibility.
+    - Never raise exceptions.
+    """
+    ts = datetime.now(timezone.utc).isoformat()
+    payload = payload or {}
+
+    record = {
+        "ts": ts,
+        "event": event,
+        "session_id": session_id,
+        "payload": payload,
+    }
+
+    # 1) Try DB first (if enabled)
+    if db_is_enabled():
+        try:
+            db_log_event(
+                event_type=event,
+                session_id=session_id,
+                payload=payload,
+            )
+        except Exception as exc:
+            # DB failures must never break the app; log at debug and continue.
+            logger.debug("db_log_event failed (event=%s): %s", event, exc)
+
+    # 2) Always write to file fallback
+    _write_to_file(record)
+
+
+# ---------------------------------------------------------------------------
+# Helper functions for common event types
+# ---------------------------------------------------------------------------
+
+def log_search_performed(
+    session_id: Optional[str],
+    query: str,
+    retailer_codes: List[str],
+    result_count: int,
+) -> None:
+    """
+    Log a search_performed event.
+
+    payload:
+    {
+        "query": "...",
+        "retailers": ["ah", "jumbo", ...],
+        "result_count": 42
+    }
+    """
+    payload = {
+        "query": query,
+        "retailers": retailer_codes,
+        "result_count": result_count,
+    }
+    log_event("search_performed", session_id, payload)
+
+
+def log_cart_items_added(
+    session_id: Optional[str],
+    retailer: str,
+    count: int,
+    item_ids: Optional[List[str]] = None,
+) -> None:
+    """
+    Log a cart_item_added event.
+
+    payload:
+    {
+        "retailer": "ah",
+        "count": 3,
+        "item_ids": ["sku1", "sku2", ...]  # optional
+    }
+    """
+    payload = {
+        "retailer": retailer,
+        "count": count,
+    }
+    if item_ids is not None:
+        payload["item_ids"] = item_ids
+
+    log_event("cart_item_added", session_id, payload)
+
+
+def log_cart_items_removed(
+    session_id: Optional[str],
+    retailer: Optional[str],
+    count: int,
+    item_ids: Optional[List[str]] = None,
+) -> None:
+    """
+    Log an item_removed event (or multiple items removed at once).
+
+    payload:
+    {
+        "retailer": "ah" or None,
+        "count": 1,
+        "item_ids": ["sku1", ...]  # optional
+    }
+    """
+    payload = {
+        "retailer": retailer,
+        "count": count,
+    }
+    if item_ids is not None:
+        payload["item_ids"] = item_ids
+
+    log_event("item_removed", session_id, payload)
+
+
+def log_cart_cleared(
+    session_id: Optional[str],
+    previous_count: int,
+) -> None:
+    """
+    Log a cart_cleared event.
+
+    payload:
+    {
+        "previous_count": 12
+    }
+    """
+    payload = {
+        "previous_count": previous_count,
+    }
+    log_event("cart_cleared", session_id, payload)
+
+
+def log_swap_clicked(
+    session_id: Optional[str],
+    from_item_id: str,
+    to_item_id: str,
+    retailer: Optional[str],
+    savings_amount: Optional[float],
+    health_delta: Optional[float],
+) -> None:
+    """
+    Log a swap_clicked event.
+
+    payload:
+    {
+        "retailer": "ah" or None,
+        "from_item_id": "...",
+        "to_item_id": "...",
+        "savings_amount": 0.75,      # € saved, optional
+        "health_delta": 2.5          # health score improvement, optional
+    }
+    """
+    payload: Dict[str, Any] = {
+        "retailer": retailer,
+        "from_item_id": from_item_id,
+        "to_item_id": to_item_id,
+    }
+    if savings_amount is not None:
+        payload["savings_amount"] = savings_amount
+    if health_delta is not None:
+        payload["health_delta"] = health_delta
+
+    log_event("swap_clicked", session_id, payload)
+
+
+def log_recipe_viewed(
+    session_id: Optional[str],
+    recipe_id: str,
+    recipe_name: str,
+    associated_items_count: Optional[int] = None,
+) -> None:
+    """
+    Log a recipe_viewed event.
+
+    payload:
+    {
+        "recipe_id": "...",
+        "recipe_name": "...",
+        "associated_items_count": 7  # optional
+    }
+    """
+    payload: Dict[str, Any] = {
+        "recipe_id": recipe_id,
+        "recipe_name": recipe_name,
+    }
+    if associated_items_count is not None:
+        payload["associated_items_count"] = associated_items_count
+
+    log_event("recipe_viewed", session_id, payload)

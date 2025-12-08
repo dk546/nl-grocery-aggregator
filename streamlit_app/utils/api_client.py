@@ -552,3 +552,87 @@ def delete_basket_template(session_id: str, template_id: str) -> bool:
     except requests.exceptions.RequestException:
         return False
 
+
+def get_recent_events(limit: int = 100) -> Dict[str, Any]:
+    """
+    Get recent analytics events from the backend.
+    
+    Args:
+        limit: Maximum number of events to return (default: 100)
+        
+    Returns:
+        Dictionary with:
+        - db_enabled: Boolean indicating if database is enabled
+        - events: List of event dictionaries
+        Or safe fallback structure if backend is unreachable.
+    """
+    try:
+        backend_url = get_backend_url()
+        response = requests.get(
+            f"{backend_url}/analytics/events/recent",
+            params={"limit": limit},
+            timeout=10,
+        )
+        response.raise_for_status()
+        data = response.json()
+        
+        # Ensure basic structure
+        if not isinstance(data, dict):
+            raise ValueError("Unexpected events payload shape")
+        
+        if "db_enabled" not in data:
+            data["db_enabled"] = False
+        if "events" not in data or not isinstance(data["events"], list):
+            data["events"] = []
+        
+        return data
+    except Exception:
+        # Return safe fallback structure
+        return {
+            "db_enabled": False,
+            "events": [],
+        }
+
+
+def get_event_counts(since_hours: int = 24) -> Dict[str, Any]:
+    """
+    Get event type counts over the last N hours.
+    
+    Args:
+        since_hours: Number of hours to look back (default: 24)
+        
+    Returns:
+        Dictionary with:
+        - db_enabled: Boolean indicating if database is enabled
+        - since_hours: Number of hours queried
+        - counts: Dictionary mapping event_type to count
+        Or safe fallback structure if backend is unreachable.
+    """
+    try:
+        backend_url = get_backend_url()
+        response = requests.get(
+            f"{backend_url}/analytics/events/counts",
+            params={"since_hours": since_hours},
+            timeout=10,
+        )
+        response.raise_for_status()
+        data = response.json()
+        
+        # Ensure basic structure
+        if not isinstance(data, dict):
+            raise ValueError("Unexpected counts payload shape")
+        
+        if "db_enabled" not in data:
+            data["db_enabled"] = False
+        if "counts" not in data:
+            data["counts"] = {}
+        
+        return data
+    except Exception:
+        # Return safe fallback structure
+        return {
+            "db_enabled": False,
+            "since_hours": since_hours,
+            "counts": {},
+        }
+
