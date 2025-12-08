@@ -37,6 +37,9 @@ class Recipe:
         tags: List of tags/categories (e.g., ["high protein", "quick", "budget"])
         ingredients: List of ingredient names (simple strings)
         instructions: List of step-by-step instruction strings
+        image_filename: Optional image filename from assets directory
+        estimated_price_eur: Optional estimated price for the whole recipe in euros
+        health_claims: Optional list of health/nutrition claim badges
     """
     id: str
     title: str
@@ -47,6 +50,9 @@ class Recipe:
     tags: List[str]
     ingredients: List[str]
     instructions: List[str]
+    image_filename: Optional[str] = None
+    estimated_price_eur: Optional[float] = None
+    health_claims: Optional[List[str]] = None
 
 
 # Curated recipe collection
@@ -74,7 +80,10 @@ _RECIPES = [
             "Cover and refrigerate overnight (at least 4 hours)",
             "In the morning, top with sliced banana, fresh berries, and nuts if desired",
             "Enjoy cold or at room temperature"
-        ]
+        ],
+        image_filename="nadine-primeau-Juvw-a-RvvI-unsplash.jpg",
+        estimated_price_eur=3.50,
+        health_claims=["High in fiber", "Vegetarian", "Budget friendly"]
     ),
     Recipe(
         id="recipe_002",
@@ -101,7 +110,10 @@ _RECIPES = [
             "Toss vegetables and chickpeas with olive oil and spread on baking sheet",
             "Roast for 20-25 minutes until vegetables are tender",
             "Serve over fresh spinach, drizzle with lemon juice, and top with feta"
-        ]
+        ],
+        image_filename="anna-pelzer-IGfIGP5ONV0-unsplash.jpg",
+        estimated_price_eur=5.50,
+        health_claims=["High protein", "200g+ vegetables"]
     ),
     Recipe(
         id="recipe_003",
@@ -129,7 +141,10 @@ _RECIPES = [
             "Season with minced garlic, salt, and herbs",
             "Bake for 15-20 minutes until salmon is cooked through and vegetables are tender",
             "Serve immediately with extra lemon wedges"
-        ]
+        ],
+        image_filename="jannis-brandt-8manzosDSGM-unsplash.jpg",
+        estimated_price_eur=8.50,
+        health_claims=["Source of omega-3", "200g+ vegetables"]
     ),
     Recipe(
         id="recipe_004",
@@ -158,7 +173,10 @@ _RECIPES = [
             "Bring to a boil, then reduce heat and simmer for 20-25 minutes",
             "Add diced tomatoes and cook for another 5 minutes",
             "Season with salt and pepper. Serve hot with fresh herbs"
-        ]
+        ],
+        image_filename="taylor-kiser-EvoIiaIVRzU-unsplash.jpg",
+        estimated_price_eur=4.00,
+        health_claims=["High protein", "High fiber", "Budget friendly"]
     ),
     Recipe(
         id="recipe_005",
@@ -181,7 +199,10 @@ _RECIPES = [
             "Top with fresh berries and sliced banana",
             "Repeat layers if desired",
             "Enjoy immediately"
-        ]
+        ],
+        image_filename="brooke-lark-oaz0raysASk-unsplash.jpg",
+        estimated_price_eur=2.80,
+        health_claims=["High protein", "Vegetarian"]
     ),
     Recipe(
         id="recipe_006",
@@ -206,7 +227,10 @@ _RECIPES = [
             "Add vegetables and stir-fry for 5-7 minutes until crisp-tender",
             "Add soy sauce and cook for another minute",
             "Serve over cooked rice or noodles"
-        ]
+        ],
+        image_filename="anh-nguyen-kcA-c3f_3FE-unsplash.jpg",
+        estimated_price_eur=5.00,
+        health_claims=["Quick", "200g+ vegetables"]
     ),
     Recipe(
         id="recipe_007",
@@ -232,7 +256,10 @@ _RECIPES = [
             "Add chopped tomatoes and cheese on one half",
             "When eggs are almost set, fold in half and cook for another minute",
             "Slide onto plate and serve hot"
-        ]
+        ],
+        image_filename="ella-olsson-KPDbRyFOTnE-unsplash.jpg",
+        estimated_price_eur=3.20,
+        health_claims=["High protein", "Vegetarian", "Quick"]
     ),
     Recipe(
         id="recipe_008",
@@ -259,7 +286,10 @@ _RECIPES = [
             "Add drained cannellini beans and heat through",
             "Toss with cooked pasta and fresh basil",
             "Serve with grated parmesan cheese"
-        ]
+        ],
+        image_filename="olena-bohovyk-Z9z7l9ByRNE-unsplash.jpg",
+        estimated_price_eur=4.80,
+        health_claims=["High protein", "Wholegrain", "Family friendly"]
     ),
 ]
 

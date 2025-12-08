@@ -380,26 +380,58 @@ The API will be available at http://127.0.0.1:8000
 - **Side Column**: Smart suggestions, retailer totals, savings finder, templates, health summary, and NLGA Plus info
 
 ### Health Insights
+- **Basket Health Score (0-100)**: Color-coded health rating displayed at the top
+  - Excellent (80-100): 🟢 Green
+  - Good (60-79): 🟡 Yellow
+  - Needs improvement (40-59): 🟠 Orange
+  - Unhealthy (0-39): 🔴 Red
+  - Personalized tips based on score
 - **Two-Column Layout**: Charts and tables on left, summary and swaps on right
 - **Top Metrics Band**: Quick overview of healthy, neutral, and less healthy items
-- **Basket Health Profile**: Analytics dashboard showing health metrics for your basket
-- **Health Tag Distribution**: Visual breakdown of healthy vs. less healthy items
+- **Visual Breakdown**: 
+  - Bar chart showing health tag distribution
+  - **Donut chart** with percentage labels showing healthy/neutral/less healthy proportions
+  - **Basket health insights** panel with personalized recommendations based on proportions
+- **Health Tag Distribution**: Detailed breakdown of healthy vs. less healthy items
 - **Spending by Category**: See how much you're spending on healthy vs. unhealthy items
-- **Small Swaps Section**: Suggestions for healthier alternatives in the side column
+- **Health-based Swap Suggestions**: 
+  - Automatically identifies items that could be swapped for healthier alternatives
+  - Shows health score improvement and price impact for each suggestion
+  - Displays top 5 suggestions sorted by health improvement
+  - Uses existing savings logic to find better alternatives
 - **AI Health Coach** (optional): Get AI-generated insights about your basket (requires `OPENAI_API_KEY`)
 
 ### Recipes & Ideas
-- **Filters-on-Left Layout**: Search and filters in left column, recipe cards grid on right
-- **Recipe Cards Grid**: Two-column grid of recipe cards with images, tags, and meta info
-- **Recipe Images**: Each recipe card displays a random healthy food image from assets
-- **Expandable Details**: Click to expand recipe cards for full ingredients, instructions, and add-to-basket
+- **Modern 3-Column Grid Layout**: Beautiful image-based recipe cards in a 3-column grid (up to 9 recipes per view)
+- **Recipe Images**: Each recipe displays a curated image from the assets directory
+- **Category Chip Bar**: Quick filter buttons at the top (All, Quick, High protein, Vegetarian, Budget-friendly, Family, Healthy)
+  - Chips override the dropdown tag filter when selected
+  - Active chip shows visual indicator (● prefix)
+- **Recipe Cards**: Rich card display with:
+  - Recipe image at the top
+  - Title and description
+  - Meta information (meal type, difficulty, prep time) and tags
+  - **Estimated price** in euros (€X.XX format)
+  - **Health claim badges** (beige pills showing claims like "High protein", "200g+ vegetables")
+  - Household-aware serving tips
+  - Expandable ingredients & instructions section
+  - "Plan this recipe" button for meal planning
+- **Planned Badge**: Visual indicator (green badge) on recipes you've planned for the week
+  - Persists across page navigations within the same session
+  - Track which recipes you've already planned
+- **Filters & Search**: Left sidebar with:
+  - Text search input
+  - Meal type dropdown filter
+  - Dietary preference/tag dropdown filter
+  - All filters work together seamlessly
 - **Recipe Collection**: Browse healthy recipes organized by meal type and tags
 - **One-Click Ingredient Addition**: Add all recipe ingredients to basket with a single click
 - **Smart Product Selection**: Automatically selects the healthiest available product for each ingredient
   - Prioritizes products tagged as "healthy"
   - Falls back to cheapest option if health scores are tied
   - Best-effort matching: adds what can be found, reports missing ingredients
-- **Recipe Details**: View ingredients, instructions, prep time, and difficulty for each recipe
+- **Recipe Analytics**: Tracks recipe views for analytics (logged when recipe details are expanded)
+- **Household-Aware**: Serving suggestions based on your household profile (single, couple, family, student)
 
 ### Analytics Dashboard
 - **Event Counts Visualization**: Bar chart showing event types and counts

@@ -22,11 +22,13 @@ if str(project_root) not in sys.path:
 import pandas as pd
 import streamlit as st
 from typing import List, Dict, Any, Optional
+from pathlib import Path
 
 from utils import recipes_data
 from utils.session import get_or_create_session_id
 from utils.api_client import search_products, add_to_cart_backend
 from utils.profile import get_profile_by_key, HOUSEHOLD_PROFILES
+from aggregator.recipes_data import Recipe
 from ui.style import (
     inject_global_css,
     section_header,
@@ -35,6 +37,25 @@ from ui.style import (
     get_random_asset_image,
     render_footer,
 )
+
+# Assets directory for recipe images
+ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
+
+
+def get_recipe_image_path(recipe: Recipe) -> Optional[Path]:
+    """
+    Get the image path for a recipe if available.
+    
+    Args:
+        recipe: Recipe object with optional image_filename
+        
+    Returns:
+        Path to image file if exists, None otherwise
+    """
+    if recipe.image_filename:
+        path = ASSETS_DIR / recipe.image_filename
+        return path if path.exists() else None
+    return None
 
 
 def health_tag_to_score(health_tag: Optional[str]) -> float:
@@ -235,6 +256,58 @@ def handle_add_recipe_to_basket(recipe: recipes_data.Recipe, session_id: str) ->
 # Inject global CSS styling
 inject_global_css()
 
+# Add recipe tag pill CSS and planned badge CSS
+st.markdown(
+    """
+    <style>
+    .recipe-tag {
+        display: inline-block;
+        background-color: #eef2ff;
+        border-radius: 999px;
+        padding: 2px 8px;
+        margin: 0 4px 4px 0;
+        font-size: 0.75rem;
+        color: #1f2933;
+        white-space: nowrap;
+    }
+    
+    .recipe-planned-badge {
+        display: inline-block;
+        background-color: #22c55e;
+        color: white;
+        border-radius: 999px;
+        padding: 2px 8px;
+        font-size: 0.75rem;
+        float: right;
+        margin-top: 4px;
+    }
+    
+    .recipe-claim {
+        display: inline-block;
+        background-color: #f5f5f4;  /* warm beige */
+        border-radius: 999px;
+        padding: 2px 10px;
+        margin: 0 4px 4px 0;
+        font-size: 0.75rem;
+        color: #44403c;
+        white-space: nowrap;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+# Category chips configuration
+CATEGORY_CHIPS = [
+    ("All", None),
+    ("Quick", "quick"),
+    ("High protein", "high-protein"),
+    ("Vegetarian", "vegetarian"),
+    ("Budget-friendly", "budget-friendly"),
+    ("Family", "family-friendly"),
+    ("Healthy", "healthy"),
+]
+
 # Page header
 section_header(
     title="Recipes & ideas",
@@ -242,15 +315,37 @@ section_header(
     help_text="Quick, simple recipes tailored to your household size."
 )
 
-# Household caption (optional)
-profile_key = st.session_state.get("household_profile_key")
-if profile_key:
-    profile = HOUSEHOLD_PROFILES.get(profile_key)
-    if profile:
-        st.caption(f"Showing ideas suitable for a **{profile.label.lower()}** household.")
+# Household profile-aware hint
+profile_key = st.session_state.get("household_profile_key", "single")
+profile = get_profile_by_key(profile_key)
+st.caption(
+    f"Recipes are suggested for your household profile: **{profile.label}** "
+    f"(typical servings multiplier: x{profile.serving_multiplier})."
+)
 
 # Get session ID for basket operations (persists across page navigations)
 session_id = get_or_create_session_id()
+
+# Initialize planned recipes tracking
+if "planned_recipes" not in st.session_state:
+    st.session_state["planned_recipes"] = set()
+
+# Initialize category chip selection
+if "selected_category_tag" not in st.session_state:
+    st.session_state["selected_category_tag"] = None  # None = All
+
+# Category chip bar
+st.markdown("#### Categories")
+chip_cols = st.columns(len(CATEGORY_CHIPS))
+
+for idx, (label, tag) in enumerate(CATEGORY_CHIPS):
+    is_active = st.session_state["selected_category_tag"] == tag
+    button_label = f"● {label}" if is_active else label
+    
+    if chip_cols[idx].button(button_label, key=f"chip_{idx}"):
+        st.session_state["selected_category_tag"] = tag
+
+st.markdown("")  # Spacing
 
 # Filters-on-left, cards-on-right layout
 filters_col, grid_col = st.columns([1, 3], gap="large")
@@ -287,120 +382,163 @@ with filters_col:
     
     st.caption("Filter by ingredient, diet, time or style.")
 
-# Get filtered recipes (same logic as before)
-filtered_recipes = recipes_data.filter_recipes(
+# Determine effective tag filter (chip takes precedence over dropdown)
+chip_tag = st.session_state.get("selected_category_tag")
+if chip_tag is not None:
+    # Chip takes precedence over dropdown
+    effective_tag_filter = chip_tag
+else:
+    # Use dropdown value if no chip is selected
+    effective_tag_filter = selected_tag if selected_tag != "All" else None
+
+# Get filtered recipes
+recipes = recipes_data.filter_recipes(
     meal_type=selected_meal_type if selected_meal_type != "All" else None,
-    tag=selected_tag if selected_tag != "All" else None,
+    tag=effective_tag_filter,
     search_text=search_text if search_text and search_text.strip() else None
 )
 
-# Check if search/filters have been applied
-has_searched = (selected_meal_type != "All" or selected_tag != "All" or (search_text and search_text.strip()))
+def render_recipe_card(recipe: Recipe, profile, session_id: str) -> None:
+    """
+    Render a single recipe card in the Recipes page grid.
+    
+    Args:
+        recipe: Recipe object to display
+        profile: HouseholdProfile object for serving hints
+        session_id: Session ID for event logging
+    """
+    with st.container():
+        st.markdown('<div class="nlga-card">', unsafe_allow_html=True)
+        
+        # Image
+        img_path = get_recipe_image_path(recipe)
+        if img_path is not None:
+            st.image(str(img_path), use_container_width=True)
+        
+        # Title + planned badge
+        title_col, badge_col = st.columns([3, 1])
+        with title_col:
+            st.markdown(f"### {recipe.title}")
+        with badge_col:
+            planned_ids = st.session_state.get("planned_recipes", set())
+            is_planned = recipe.id in planned_ids
+            if is_planned:
+                st.markdown(
+                    "<span class='recipe-planned-badge'>Planned</span>",
+                    unsafe_allow_html=True,
+                )
+        
+        # Description
+        if getattr(recipe, "description", None):
+            st.caption(recipe.description)
+        
+        # Meta + tags in two columns
+        meta_col, tags_col = st.columns([2, 1])
+        
+        with meta_col:
+            meal_type_display = getattr(recipe, "meal_type", "Unknown")
+            difficulty_display = getattr(recipe, "difficulty", "Unknown")
+            prep_time = getattr(recipe, "prep_time_minutes", None)
+            
+            meta_lines = [
+                f"- **Meal type:** {meal_type_display}",
+                f"- **Difficulty:** {difficulty_display}",
+            ]
+            if prep_time is not None:
+                meta_lines.append(f"- **Prep time:** {prep_time} minutes")
+            
+            st.markdown("\n".join(meta_lines))
+        
+        with tags_col:
+            if getattr(recipe, "tags", None) and recipe.tags:
+                st.markdown("**Tags**")
+                # Simple pill-style display
+                tags_html = " ".join(
+                    f"<span class='recipe-tag'>{tag}</span>" for tag in sorted(recipe.tags)
+                )
+                st.markdown(tags_html, unsafe_allow_html=True)
+        
+        # Price line, if available
+        if getattr(recipe, "estimated_price_eur", None) is not None:
+            st.markdown(f"**€{recipe.estimated_price_eur:.2f}**")
+        
+        # Health claim badges
+        if getattr(recipe, "health_claims", None) and recipe.health_claims:
+            claims_html = " ".join(
+                f"<span class='recipe-claim'>{claim}</span>"
+                for claim in recipe.health_claims
+            )
+            st.markdown(claims_html, unsafe_allow_html=True)
+        
+        # Household tip
+        st.markdown(
+            f"<small>Tip: For your {profile.label.lower()} household, consider using "
+            f"{profile.serving_multiplier:.1f}× the base ingredients if you want leftovers.</small>",
+            unsafe_allow_html=True,
+        )
+        
+        # Details expander (ingredients + steps)
+        expander_key = f"recipe_expander_{recipe.id}"
+        with st.expander("View ingredients & steps", key=expander_key):
+            # Log recipe viewed event once per session
+            try:
+                from aggregator.events import log_recipe_viewed
+                view_key = f"recipe_viewed_{recipe.id}"
+                if view_key not in st.session_state:
+                    log_recipe_viewed(
+                        session_id=session_id,
+                        recipe_id=recipe.id,
+                        recipe_name=recipe.title,
+                        associated_items_count=len(recipe.ingredients),
+                    )
+                    st.session_state[view_key] = True
+            except Exception:
+                # Non-blocking: if logging fails, continue anyway
+                pass
+            
+            st.markdown("**Ingredients**")
+            for item in recipe.ingredients:
+                st.markdown(f"- {item}")
+            
+            st.markdown("**Steps**")
+            if hasattr(recipe, "instructions") and recipe.instructions:
+                for i, step in enumerate(recipe.instructions, start=1):
+                    st.markdown(f"{i}. {step}")
+            else:
+                st.info("Instructions not available for this recipe.")
+        
+        # Plan button (demo)
+        if st.button("Plan this recipe", key=f"plan_{recipe.id}"):
+            planned = st.session_state.get("planned_recipes", set())
+            planned.add(recipe.id)
+            st.session_state["planned_recipes"] = planned
+            st.success("Recipe added to your meal ideas for this week (demo).")
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+
 
 # Right column: Recipe cards grid
 with grid_col:
-    if not has_searched:
-        st.info("""
-Search for a dish or ingredient to get recipe ideas.
-
-Try **pasta**, **kipfilet**, or **havermout**.
-
-""")
-        st.stop()
-    
-    if has_searched and not filtered_recipes:
-        st.warning("No recipes found. Try adjusting your filters.")
-        st.stop()
-    
-    # Recipe ideas grid
-    st.markdown("### Recipe ideas")
-    st.caption("Tap a recipe to see full details and add its ingredients to your basket.")
-    
-    # Two-column card grid
-    cols = st.columns(2, gap="large")
-    
-    for idx, recipe in enumerate(filtered_recipes):
-        col = cols[idx % 2]
+    if not recipes:
+        st.info(
+            "No recipes matched these filters. Try clearing the filters or searching for "
+            "'pasta', 'kipfilet', or 'havermout'."
+        )
+    else:
+        # Results count
+        st.markdown(f"**Found {len(recipes)} recipe(s)**")
         
-        with col:
-            image_path = get_random_asset_image(f"recipe_{idx}")
-            
-            st.markdown('<div class="nlga-card nlga-recipe-card">', unsafe_allow_html=True)
-            
-            # Image
-            if image_path:
-                st.markdown('<div class="nlga-recipe-image">', unsafe_allow_html=True)
-                st.image(image_path, use_container_width=True)
-                st.markdown('</div>', unsafe_allow_html=True)
-            
-            # Title
-            st.markdown(f"#### {recipe.title}")
-            
-            # Tags (diet, time, cuisine — use whatever your recipe objects have)
-            tag_row = st.columns(3)
-            
-            with tag_row[0]:
-                if getattr(recipe, "prep_time_minutes", None):
-                    st.caption(f"⏱ {recipe.prep_time_minutes} min")
-            
-            with tag_row[1]:
-                if getattr(recipe, "servings", None):
-                    st.caption(f"🍽 {recipe.servings} servings")
-                else:
-                    st.caption(f"🍽 2 servings")
-            
-            with tag_row[2]:
-                tags = getattr(recipe, "tags", None) or []
-                if tags:
-                    # Show first tag as pill if available
-                    st.markdown(pill_tag(str(tags[0])), unsafe_allow_html=True)
-                elif getattr(recipe, "diet", None):
-                    st.markdown(pill_tag(str(recipe.diet)), unsafe_allow_html=True)
-            
-            # Expandable details
-            with st.expander("View recipe"):
-                # Description
-                if getattr(recipe, "description", None):
-                    st.markdown(recipe.description)
-                
-                st.markdown("---")
-                
-                # Ingredients (reuse your existing loop / table)
-                st.markdown("### Ingredients")
-                ingredients_list = "\n".join([f"• {ing}" for ing in recipe.ingredients])
-                st.markdown(ingredients_list)
-                
-                st.markdown("---")
-                
-                # Instructions section
-                if hasattr(recipe, "instructions") and recipe.instructions:
-                    st.markdown("### 👨‍🍳 Instructions")
-                    for inst_idx, instruction in enumerate(recipe.instructions, 1):
-                        st.markdown(f"**{inst_idx}.** {instruction}")
-                    st.markdown("---")
-                
-                # Household-aware serving hint
-                profile_key_current = st.session_state.get("household_profile_key")
-                profile_current = get_profile_by_key(profile_key_current)
-                if profile_current and hasattr(recipe, "servings") and recipe.servings:
-                    adjusted_servings = int(recipe.servings * profile_current.serving_multiplier)
-                    st.caption(f"For your household: ~{adjusted_servings} servings")
-                elif profile_current:
-                    # Use default base servings if recipe doesn't have servings field
-                    base_servings_default = 2
-                    adjusted_servings = int(base_servings_default * profile_current.serving_multiplier)
-                    st.caption(f"For your household: ~{adjusted_servings} servings")
-                
-                # Serving scale controls + Add to basket button
-                if st.button(
-                    f"Add ingredients to basket ({recipe.title})",
-                    key=f"add_ingredients_{recipe.id}",
-                    width='stretch',
-                    type="primary"
-                ):
-                    handle_add_recipe_to_basket(recipe, session_id)
-            
-            st.markdown('</div>', unsafe_allow_html=True)
+        # Limit to 9 recipes for 3x3 grid
+        max_cards = 9
+        recipes_to_show = recipes[:max_cards]
+        
+        # Create 3-column grid
+        cols = st.columns(3, gap="large")
+        
+        for idx, recipe in enumerate(recipes_to_show):
+            col = cols[idx % 3]
+            with col:
+                render_recipe_card(recipe, profile, session_id)
 
 # Footer
 render_footer()
