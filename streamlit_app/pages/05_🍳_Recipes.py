@@ -28,8 +28,7 @@ from utils import recipes_data
 from utils.session import get_or_create_session_id
 from utils.api_client import search_products, add_to_cart_backend
 from utils.profile import get_profile_by_key, HOUSEHOLD_PROFILES
-from aggregator.recipes_data import Recipe
-from typing import Dict
+from streamlit_app.utils.recipes_data import Recipe
 from ui.style import (
     inject_global_css,
     section_header,

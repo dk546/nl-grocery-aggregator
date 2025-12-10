@@ -402,6 +402,7 @@ The API will be available at http://127.0.0.1:8000
 - **AI Health Coach** (optional): Get AI-generated insights about your basket (requires `OPENAI_API_KEY`)
 
 ### Recipes & Ideas
+- **Meal Planning Hub**: Transform recipes into a weekly meal plan with integrated shopping and health tracking
 - **Modern 3-Column Grid Layout**: Beautiful image-based recipe cards in a 3-column grid (up to 9 recipes per view)
 - **Recipe Images**: Each recipe displays a curated image from the assets directory
 - **Category Chip Bar**: Quick filter buttons at the top (All, Quick, High protein, Vegetarian, Budget-friendly, Family, Healthy)
@@ -411,12 +412,20 @@ The API will be available at http://127.0.0.1:8000
   - Recipe image at the top
   - Title and description
   - Meta information (meal type, difficulty, prep time) and tags
-  - **Estimated price** in euros (€X.XX format)
+  - **Estimated price** in euros (€X.XX format) displayed alongside planned badge in a commerce-style row
   - **Health claim badges** (beige pills showing claims like "High protein", "200g+ vegetables")
+    - Limited to 3 claims per card for clean display
+    - Hover tooltips show full claim text
   - Household-aware serving tips
   - Expandable ingredients & instructions section
   - "Plan this recipe" button for meal planning
+- **Planned Recipes Summary Panel**: Right-side panel showing your weekly meal plan
+  - Displays count and list of all planned recipes
+  - Shows recipe title, price, prep time, and meal type for each planned recipe
+  - Hints linking to **My Basket** (for assembling ingredients) and **Health Insights** (for analyzing grocery health)
+  - "Clear all planned recipes" button to reset your meal plan (session-scoped)
 - **Planned Badge**: Visual indicator (green badge) on recipes you've planned for the week
+  - Displayed in bottom row alongside price (commerce-style layout)
   - Persists across page navigations within the same session
   - Track which recipes you've already planned
 - **Filters & Search**: Left sidebar with:
@@ -430,7 +439,10 @@ The API will be available at http://127.0.0.1:8000
   - Prioritizes products tagged as "healthy"
   - Falls back to cheapest option if health scores are tied
   - Best-effort matching: adds what can be found, reports missing ingredients
-- **Recipe Analytics**: Tracks recipe views for analytics (logged when recipe details are expanded)
+- **Recipe Analytics**: 
+  - Tracks recipe views for analytics (logged when recipe details are expanded)
+  - Tracks recipe planning events (logged when "Plan this recipe" is clicked)
+  - All analytics events integrate with the Analytics Dashboard
 - **Household-Aware**: Serving suggestions based on your household profile (single, couple, family, student)
 
 ### Analytics Dashboard
