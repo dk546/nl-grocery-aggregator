@@ -33,6 +33,7 @@ from streamlit_app.utils.meal_plan import (
 )
 from streamlit_app.utils.session import get_or_create_session_id
 from streamlit_app.utils.api_client import add_to_cart_backend
+from streamlit_app.utils.retailers import RETAILER_DISPLAY_NAMES, ALL_RETAILER_CODES
 from aggregator.events import log_meal_plan_sent_to_cart
 from ui.style import inject_global_css, render_footer
 
@@ -45,6 +46,10 @@ st.caption("Plan simple meals for your week using recipes you've marked as plann
 
 # Initialize meal plan
 init_meal_plan()
+
+# Initialize preferred retailer for meal plan
+if "meal_plan_retailer" not in st.session_state:
+    st.session_state["meal_plan_retailer"] = "ah"  # default
 
 # Build recipes lookup
 all_recipes = get_all_recipes()
@@ -117,6 +122,16 @@ with left_col:
                         pass
 
                     st.success(f"Assigned **{recipe.title}** to **{day}**.")
+            
+            # Add "Find ingredients" button for each recipe
+            if st.button("Find ingredients for this recipe", key=f"find_ing_{recipe.id}"):
+                # Set a shared session key with the recipe title as search query
+                st.session_state["recipe_search_query"] = recipe.title
+                
+                st.info(
+                    "Opened the recipe search query for this recipe. "
+                    "Now click on **🛒 Search & Compare** in the sidebar to see results."
+                )
 
 # Right column: Weekly calendar view
 with right_col:
@@ -160,6 +175,18 @@ with right_col:
             "(based on recipe estimates)."
         )
         
+        # Preferred retailer selector
+        st.markdown("#### Preferred retailer")
+        current_retailer = st.session_state.get("meal_plan_retailer", "ah")
+        retailer_code = st.selectbox(
+            "Choose a primary retailer for this plan:",
+            options=ALL_RETAILER_CODES,
+            format_func=lambda code: RETAILER_DISPLAY_NAMES.get(code, code),
+            index=ALL_RETAILER_CODES.index(current_retailer) if current_retailer in ALL_RETAILER_CODES else 0,
+            key="meal_plan_retailer_select",
+        )
+        st.session_state["meal_plan_retailer"] = retailer_code
+        
         if st.button("Send meal plan to My Basket (demo)"):
             send_errors = []
             session_id = None
@@ -174,11 +201,11 @@ with right_col:
             # Add each recipe to cart as a placeholder item
             for r in planned_recipes_in_plan:
                 try:
-                    # Use a valid retailer code (required by backend)
-                    # For demo items, use "ah" as a placeholder retailer
+                    # Use the selected preferred retailer from session state
+                    selected_retailer = st.session_state.get("meal_plan_retailer", "ah")
                     result = add_to_cart_backend(
                         session_id=session_id,
-                        retailer="ah",  # Must be a valid retailer: ah, jumbo, picnic, or dirk
+                        retailer=selected_retailer,  # Use user-selected retailer
                         product_id=f"meal-plan-{r.id}",  # Unique product ID for this meal plan item
                         name=f"[Meal plan] {r.title}",
                         price_eur=getattr(r, "estimated_price_eur", 0.0) or 0.0,

@@ -65,8 +65,17 @@ sort_options = {
 }
 
 # Initialize form state from session_state (persists across page navigations)
+# Check for recipe search query from Meal Planner (one-time prefilling)
+if "recipe_search_query" in st.session_state:
+    # Use the recipe search query as default, then clear it after one use
+    recipe_query = st.session_state.pop("recipe_search_query")
+    # Set it as the search query if not already set
+    if "search_query" not in st.session_state or st.session_state["search_query"] == "":
+        st.session_state["search_query"] = recipe_query
+
 if "search_query" not in st.session_state:
     st.session_state["search_query"] = ""
+
 if "search_retailers" not in st.session_state:
     st.session_state["search_retailers"] = DEFAULT_RETAILERS  # Default: all
 if "search_sort_by" not in st.session_state:
