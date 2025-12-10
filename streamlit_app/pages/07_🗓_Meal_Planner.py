@@ -163,26 +163,38 @@ with right_col:
         if st.button("Send meal plan to My Basket (demo)"):
             send_errors = []
             session_id = None
+            success_count = 0
             
             # Get session ID (best-effort)
             try:
                 session_id = get_or_create_session_id()
             except Exception:
-                pass
+                session_id = "demo"
             
             # Add each recipe to cart as a placeholder item
             for r in planned_recipes_in_plan:
                 try:
-                    add_to_cart_backend(
-                        session_id=session_id or "demo",
-                        retailer="meal-plan",
-                        product_id=f"meal-plan-{r.id}",
+                    # Use a valid retailer code (required by backend)
+                    # For demo items, use "ah" as a placeholder retailer
+                    result = add_to_cart_backend(
+                        session_id=session_id,
+                        retailer="ah",  # Must be a valid retailer: ah, jumbo, picnic, or dirk
+                        product_id=f"meal-plan-{r.id}",  # Unique product ID for this meal plan item
                         name=f"[Meal plan] {r.title}",
                         price_eur=getattr(r, "estimated_price_eur", 0.0) or 0.0,
                         quantity=1,
+                        image_url=None,  # Optional
+                        health_tag=None,  # Optional
                     )
-                except Exception as exc:
-                    send_errors.append(str(exc))
+                    
+                    # Check if the operation succeeded (returns dict on success, None on error)
+                    if result is not None:
+                        success_count += 1
+                    else:
+                        send_errors.append(r.title)
+                except Exception:
+                    # Catch any unexpected exceptions (shouldn't happen, but be safe)
+                    send_errors.append(r.title)
             
             # Log analytics (best-effort)
             try:
@@ -195,18 +207,35 @@ with right_col:
                 pass
             
             # Show success or warning message
-            if not send_errors:
+            if len(send_errors) == 0:
+                # All items succeeded
                 st.success(
-                    "Sent your weekly meal plan to **My Basket** as demo items.\n\n"
-                    "Next, open **🧺 My Basket** to review them, and then go to "
-                    "**📊 Health Insights** to see how healthy your basket looks."
+                    "Sent your weekly meal plan to My Basket as demo items. "
+                    "Next, open 🧺 My Basket to review them, and then go to "
+                    "📊 Health Insights to see how healthy your basket looks."
                 )
             else:
-                st.warning(
-                    "Tried to send your weekly meal plan to **My Basket**, "
-                    "but some items may not have been added. "
-                    "You can still go to **My Basket** to review what is there."
-                )
+                # Some or all items failed
+                if success_count > 0:
+                    # Partial success
+                    failed_list = "\n".join([f"- {title}" for title in send_errors[:5]])
+                    if len(send_errors) > 5:
+                        failed_list += f"\n- ... and {len(send_errors) - 5} more"
+                    
+                    st.warning(
+                        f"Tried to send your weekly meal plan to My Basket. "
+                        f"**{success_count}** item(s) were added successfully, but "
+                        f"**{len(send_errors)}** item(s) could not be added:\n\n"
+                        f"{failed_list}\n\n"
+                        f"You can still open 🧺 My Basket to review what was added."
+                    )
+                else:
+                    # Complete failure
+                    st.warning(
+                        "Could not send your weekly meal plan to My Basket. "
+                        "Please check your connection and try again. "
+                        "You can still open 🧺 My Basket to manually add items."
+                    )
     
     st.markdown("---")
     if st.button("Clear meal plan"):
