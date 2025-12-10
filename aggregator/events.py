@@ -278,3 +278,25 @@ def log_recipe_planned(
     }
 
     log_event("recipe_planned", session_id, payload)
+
+
+def log_meal_planned_on_day(
+    session_id: Optional[str],
+    recipe_id: str,
+    day: str,
+) -> None:
+    """
+    Log a meal_planned_on_day event.
+
+    payload:
+    {
+        "recipe_id": "...",
+        "day": "Mon"  # or other day of week
+    }
+    """
+    payload: Dict[str, Any] = {
+        "recipe_id": recipe_id,
+        "day": day,
+    }
+
+    log_event("meal_planned_on_day", session_id, payload)

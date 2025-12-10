@@ -580,6 +580,8 @@ def render_planned_summary() -> None:
     st.markdown(
         """
         <small>
+        Tip: Use the <b>🗓 Meal Planner</b> page (in the sidebar) to assign these recipes to days of the week.
+        <br><br>
         Later, you can use these planned recipes to build your basket and analyze health:
         <br>- Go to <b>🧺 My Basket</b> to assemble ingredients
         <br>- Go to <b>📊 Health Insights</b> to see how healthy your groceries look
