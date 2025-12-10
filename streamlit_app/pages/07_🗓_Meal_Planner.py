@@ -21,6 +21,7 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 import streamlit as st
+from typing import List
 
 from streamlit_app.utils.recipes_data import get_all_recipes, Recipe
 from streamlit_app.utils.meal_plan import (
@@ -31,6 +32,8 @@ from streamlit_app.utils.meal_plan import (
     clear_meal_plan,
 )
 from streamlit_app.utils.session import get_or_create_session_id
+from streamlit_app.utils.api_client import add_to_cart_backend
+from aggregator.events import log_meal_plan_sent_to_cart
 from ui.style import inject_global_css, render_footer
 
 # Inject global CSS styling
@@ -52,6 +55,23 @@ planned_ids = st.session_state.get("planned_recipes", set())
 planned_list = [
     recipes_by_id[rid] for rid in planned_ids if rid in recipes_by_id
 ]
+
+# Compute shopping summary from meal plan
+meal_plan = get_meal_plan()
+
+# Flatten recipe IDs from the plan (count duplicates)
+recipe_ids_in_plan: List[str] = []
+for day in DAYS_OF_WEEK:
+    recipe_ids_in_plan.extend(meal_plan.get(day, []))
+
+planned_recipes_in_plan: List[Recipe] = [
+    recipes_by_id[rid] for rid in recipe_ids_in_plan if rid in recipes_by_id
+]
+
+recipe_count = len(planned_recipes_in_plan)
+total_estimated_price = sum(
+    getattr(r, "estimated_price_eur", 0.0) or 0.0 for r in planned_recipes_in_plan
+)
 
 # Two-column layout
 left_col, right_col = st.columns([2, 3])
@@ -102,8 +122,6 @@ with left_col:
 with right_col:
     st.markdown("### This week's plan")
 
-    meal_plan = get_meal_plan()
-
     if all(len(meal_plan[day]) == 0 for day in DAYS_OF_WEEK):
         st.caption("No meals assigned yet. Use the left panel to assign recipes to days.")
     else:
@@ -128,6 +146,68 @@ with right_col:
                         if price_str:
                             st.caption(price_str)
 
+    st.markdown("---")
+    
+    # Shopping summary section
+    st.markdown("### Shopping summary (demo)")
+    
+    if recipe_count == 0:
+        st.caption("No meals in this week's plan yet. Assign recipes to days first.")
+    else:
+        st.markdown(
+            f"You have **{recipe_count} planned meal(s)** this week, "
+            f"with an approximate total of **€{total_estimated_price:.2f}** "
+            "(based on recipe estimates)."
+        )
+        
+        if st.button("Send meal plan to My Basket (demo)"):
+            send_errors = []
+            session_id = None
+            
+            # Get session ID (best-effort)
+            try:
+                session_id = get_or_create_session_id()
+            except Exception:
+                pass
+            
+            # Add each recipe to cart as a placeholder item
+            for r in planned_recipes_in_plan:
+                try:
+                    add_to_cart_backend(
+                        session_id=session_id or "demo",
+                        retailer="meal-plan",
+                        product_id=f"meal-plan-{r.id}",
+                        name=f"[Meal plan] {r.title}",
+                        price_eur=getattr(r, "estimated_price_eur", 0.0) or 0.0,
+                        quantity=1,
+                    )
+                except Exception as exc:
+                    send_errors.append(str(exc))
+            
+            # Log analytics (best-effort)
+            try:
+                log_meal_plan_sent_to_cart(
+                    session_id=session_id,
+                    recipe_count=recipe_count,
+                    total_estimated_price_eur=total_estimated_price,
+                )
+            except Exception:
+                pass
+            
+            # Show success or warning message
+            if not send_errors:
+                st.success(
+                    "Sent your weekly meal plan to **My Basket** as demo items.\n\n"
+                    "Next, open **🧺 My Basket** to review them, and then go to "
+                    "**📊 Health Insights** to see how healthy your basket looks."
+                )
+            else:
+                st.warning(
+                    "Tried to send your weekly meal plan to **My Basket**, "
+                    "but some items may not have been added. "
+                    "You can still go to **My Basket** to review what is there."
+                )
+    
     st.markdown("---")
     if st.button("Clear meal plan"):
         clear_meal_plan()

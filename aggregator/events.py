@@ -300,3 +300,25 @@ def log_meal_planned_on_day(
     }
 
     log_event("meal_planned_on_day", session_id, payload)
+
+
+def log_meal_plan_sent_to_cart(
+    session_id: Optional[str],
+    recipe_count: int,
+    total_estimated_price_eur: float,
+) -> None:
+    """
+    Log a meal_plan_sent_to_cart event.
+
+    payload:
+    {
+        "recipe_count": 5,
+        "total_estimated_price_eur": 25.50
+    }
+    """
+    payload: Dict[str, Any] = {
+        "recipe_count": recipe_count,
+        "total_estimated_price_eur": total_estimated_price_eur,
+    }
+
+    log_event("meal_plan_sent_to_cart", session_id, payload)
