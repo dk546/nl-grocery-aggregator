@@ -256,3 +256,25 @@ def log_recipe_viewed(
         payload["associated_items_count"] = associated_items_count
 
     log_event("recipe_viewed", session_id, payload)
+
+
+def log_recipe_planned(
+    session_id: Optional[str],
+    recipe_id: str,
+    title: str,
+) -> None:
+    """
+    Log a recipe_planned event.
+
+    payload:
+    {
+        "recipe_id": "...",
+        "title": "..."
+    }
+    """
+    payload: Dict[str, Any] = {
+        "recipe_id": recipe_id,
+        "title": title,
+    }
+
+    log_event("recipe_planned", session_id, payload)

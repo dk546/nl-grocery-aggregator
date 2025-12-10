@@ -29,6 +29,7 @@ from utils.session import get_or_create_session_id
 from utils.api_client import search_products, add_to_cart_backend
 from utils.profile import get_profile_by_key, HOUSEHOLD_PROFILES
 from aggregator.recipes_data import Recipe
+from typing import Dict
 from ui.style import (
     inject_global_css,
     section_header,
@@ -40,6 +41,17 @@ from ui.style import (
 
 # Assets directory for recipe images
 ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
+
+
+def get_recipes_by_id() -> Dict[str, Recipe]:
+    """
+    Get a dictionary mapping recipe IDs to Recipe objects.
+    
+    Returns:
+        Dictionary with recipe IDs as keys and Recipe objects as values
+    """
+    recipes = recipes_data.get_all_recipes()
+    return {r.id: r for r in recipes}
 
 
 def get_recipe_image_path(recipe: Recipe) -> Optional[Path]:
@@ -415,18 +427,12 @@ def render_recipe_card(recipe: Recipe, profile, session_id: str) -> None:
         if img_path is not None:
             st.image(str(img_path), use_container_width=True)
         
-        # Title + planned badge
-        title_col, badge_col = st.columns([3, 1])
-        with title_col:
-            st.markdown(f"### {recipe.title}")
-        with badge_col:
-            planned_ids = st.session_state.get("planned_recipes", set())
-            is_planned = recipe.id in planned_ids
-            if is_planned:
-                st.markdown(
-                    "<span class='recipe-planned-badge'>Planned</span>",
-                    unsafe_allow_html=True,
-                )
+        # Title only (no badge at top)
+        st.markdown(f"### {recipe.title}")
+        
+        # Check if recipe is planned (reused later for bottom badge)
+        planned_ids = st.session_state.get("planned_recipes", set())
+        is_planned = recipe.id in planned_ids
         
         # Description
         if getattr(recipe, "description", None):
@@ -458,15 +464,13 @@ def render_recipe_card(recipe: Recipe, profile, session_id: str) -> None:
                 )
                 st.markdown(tags_html, unsafe_allow_html=True)
         
-        # Price line, if available
-        if getattr(recipe, "estimated_price_eur", None) is not None:
-            st.markdown(f"**€{recipe.estimated_price_eur:.2f}**")
-        
-        # Health claim badges
+        # Health claim badges (limited to 3, with tooltips)
+        MAX_CLAIMS = 3
         if getattr(recipe, "health_claims", None) and recipe.health_claims:
+            visible_claims = recipe.health_claims[:MAX_CLAIMS]
             claims_html = " ".join(
-                f"<span class='recipe-claim'>{claim}</span>"
-                for claim in recipe.health_claims
+                f"<span class='recipe-claim' title='{claim}'>{claim}</span>"
+                for claim in visible_claims
             )
             st.markdown(claims_html, unsafe_allow_html=True)
         
@@ -476,6 +480,18 @@ def render_recipe_card(recipe: Recipe, profile, session_id: str) -> None:
             f"{profile.serving_multiplier:.1f}× the base ingredients if you want leftovers.</small>",
             unsafe_allow_html=True,
         )
+        
+        # Price + Planned badge row (commerce row at bottom)
+        price_col, planned_col = st.columns([2, 1])
+        with price_col:
+            if getattr(recipe, "estimated_price_eur", None) is not None:
+                st.markdown(f"**€{recipe.estimated_price_eur:.2f}**")
+        with planned_col:
+            if is_planned:
+                st.markdown(
+                    "<span class='recipe-planned-badge'>Planned</span>",
+                    unsafe_allow_html=True,
+                )
         
         # Details expander (ingredients + steps)
         expander_key = f"recipe_expander_{recipe.id}"
@@ -512,33 +528,103 @@ def render_recipe_card(recipe: Recipe, profile, session_id: str) -> None:
             planned = st.session_state.get("planned_recipes", set())
             planned.add(recipe.id)
             st.session_state["planned_recipes"] = planned
+            
+            # Log analytics (best-effort only)
+            try:
+                from aggregator.events import log_recipe_planned
+                current_session_id = get_or_create_session_id()
+                log_recipe_planned(
+                    session_id=current_session_id,
+                    recipe_id=recipe.id,
+                    title=recipe.title
+                )
+            except Exception:
+                pass  # Non-blocking: continue even if logging fails
+            
             st.success("Recipe added to your meal ideas for this week (demo).")
         
         st.markdown('</div>', unsafe_allow_html=True)
 
 
-# Right column: Recipe cards grid
-with grid_col:
-    if not recipes:
-        st.info(
-            "No recipes matched these filters. Try clearing the filters or searching for "
-            "'pasta', 'kipfilet', or 'havermout'."
+def render_planned_summary() -> None:
+    """
+    Render a summary panel showing all planned recipes for the week.
+    """
+    st.markdown("### 🗒️ Planned recipes")
+    
+    planned_ids = st.session_state.get("planned_recipes", set())
+    if not planned_ids:
+        st.caption(
+            "No recipes planned yet. Click **Plan this recipe** on any card to start a simple meal plan."
         )
-    else:
-        # Results count
-        st.markdown(f"**Found {len(recipes)} recipe(s)**")
+        return
+    
+    recipes_by_id = get_recipes_by_id()
+    planned_recipes = [recipes_by_id[rid] for rid in planned_ids if rid in recipes_by_id]
+    
+    st.caption(f"You have planned **{len(planned_recipes)}** recipe(s) this week.")
+    
+    for r in planned_recipes:
+        price_str = (
+            f"€{r.estimated_price_eur:.2f}"
+            if getattr(r, "estimated_price_eur", None) is not None
+            else "Price TBD"
+        )
+        prep_time = getattr(r, "prep_time_minutes", "N/A")
+        meal_type = getattr(r, "meal_type", "Unknown")
         
-        # Limit to 9 recipes for 3x3 grid
-        max_cards = 9
-        recipes_to_show = recipes[:max_cards]
-        
-        # Create 3-column grid
-        cols = st.columns(3, gap="large")
-        
-        for idx, recipe in enumerate(recipes_to_show):
-            col = cols[idx % 3]
-            with col:
-                render_recipe_card(recipe, profile, session_id)
+        st.markdown(
+            f"- **{r.title}**  \n"
+            f"  {price_str} · {prep_time} min · {meal_type}"
+        )
+    
+    # Small hint linking to other pages
+    st.markdown(
+        """
+        <small>
+        Later, you can use these planned recipes to build your basket and analyze health:
+        <br>- Go to <b>🧺 My Basket</b> to assemble ingredients
+        <br>- Go to <b>📊 Health Insights</b> to see how healthy your groceries look
+        </small>
+        """,
+        unsafe_allow_html=True,
+    )
+    
+    # Demo-only clear button
+    if st.button("Clear all planned recipes"):
+        st.session_state["planned_recipes"] = set()
+        st.info("Cleared all planned recipes for this session.")
+
+
+# Right column: Recipe cards grid + Planned summary
+with grid_col:
+    # Split right column into grid (left) and summary (right)
+    grid_content_col, summary_col = st.columns([3, 1], gap="large")
+    
+    with grid_content_col:
+        if not recipes:
+            st.info(
+                "No recipes matched these filters. Try clearing the filters or searching for "
+                "'pasta', 'kipfilet', or 'havermout'."
+            )
+        else:
+            # Results count
+            st.markdown(f"**Found {len(recipes)} recipe(s)**")
+            
+            # Limit to 9 recipes for 3x3 grid
+            max_cards = 9
+            recipes_to_show = recipes[:max_cards]
+            
+            # Create 3-column grid
+            cols = st.columns(3, gap="large")
+            
+            for idx, recipe in enumerate(recipes_to_show):
+                col = cols[idx % 3]
+                with col:
+                    render_recipe_card(recipe, profile, session_id)
+    
+    with summary_col:
+        render_planned_summary()
 
 # Footer
 render_footer()
