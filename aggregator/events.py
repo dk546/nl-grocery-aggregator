@@ -322,3 +322,66 @@ def log_meal_plan_sent_to_cart(
     }
 
     log_event("meal_plan_sent_to_cart", session_id, payload)
+
+
+def log_basket_health_check_clicked(session_id: Optional[str]) -> None:
+    """
+    Log a basket_health_check_clicked event.
+
+    payload: {} (empty, just tracks the click)
+    """
+    log_event("basket_health_check_clicked", session_id, {})
+
+
+def log_weekly_essentials_added(session_id: Optional[str], item_count: int) -> None:
+    """
+    Log a weekly_essentials_added event.
+
+    payload:
+    {
+        "item_count": 4
+    }
+    """
+    payload: Dict[str, Any] = {
+        "item_count": item_count,
+    }
+    log_event("weekly_essentials_added", session_id, payload)
+
+
+def log_swaps_cta_clicked(session_id: Optional[str]) -> None:
+    """
+    Log a swaps_cta_clicked event.
+
+    payload: {} (empty, just tracks the click)
+    """
+    log_event("swaps_cta_clicked", session_id, {})
+
+
+def log_shopping_list_exported(session_id: Optional[str], item_count: int) -> None:
+    """
+    Log a shopping_list_exported event.
+
+    payload:
+    {
+        "item_count": 10
+    }
+    """
+    payload: Dict[str, Any] = {
+        "item_count": item_count,
+    }
+    log_event("shopping_list_exported", session_id, payload)
+
+
+def log_checkout_mock_started(session_id: Optional[str], retailer: str) -> None:
+    """
+    Log a checkout_mock_started event.
+
+    payload:
+    {
+        "retailer": "ah"
+    }
+    """
+    payload: Dict[str, Any] = {
+        "retailer": retailer,
+    }
+    log_event("checkout_mock_started", session_id, payload)

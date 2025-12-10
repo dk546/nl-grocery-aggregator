@@ -37,6 +37,13 @@ from utils.api_client import (
     delete_basket_template,
     get_price_history,
 )
+from aggregator.events import (
+    log_basket_health_check_clicked,
+    log_weekly_essentials_added,
+    log_swaps_cta_clicked,
+    log_shopping_list_exported,
+    log_checkout_mock_started,
+)
 from utils.profile import HOUSEHOLD_PROFILES, get_profile_by_key
 from utils.preferences import (
     get_user_preferences_from_session,
@@ -148,6 +155,143 @@ main_col, side_col = st.columns([2.2, 1], gap="large")
 
 # Main column: Basket table + item actions
 with main_col:
+    # Next Steps panel
+    st.markdown("### Next steps")
+    st.caption("Decide what to do with your current basket. You can check health, add essentials, explore swaps, export a list, or simulate online checkout (demo).")
+    
+    next_steps_col1, next_steps_col2 = st.columns(2, gap="medium")
+    
+    with next_steps_col1:
+        # 1. Health check for this basket
+        if st.button("See how healthy this basket is", key="btn_health_check", use_container_width=True):
+            # Log analytics
+            try:
+                log_basket_health_check_clicked(session_id=session_id)
+            except Exception:
+                pass
+            
+            # Simple navigation hint: tell user to click Health Insights in sidebar
+            st.info(
+                "To see a breakdown of healthier, neutral, and less healthy items, "
+                "open the **Health Insights** page from the sidebar."
+            )
+        
+        # 2. Add missing weekly essentials (demo)
+        st.markdown("#### Add weekly essentials (demo)")
+        
+        if st.button("Add milk, bread, eggs & fruit", key="btn_add_essentials", use_container_width=True):
+            essentials = [
+                {"name": "[Essential] Milk 1L", "price": 1.25, "id": "essential-milk"},
+                {"name": "[Essential] Bread (wholegrain)", "price": 1.80, "id": "essential-bread"},
+                {"name": "[Essential] Eggs (10-pack)", "price": 2.50, "id": "essential-eggs"},
+                {"name": "[Essential] Seasonal fruit", "price": 3.00, "id": "essential-fruit"},
+            ]
+            
+            added = 0
+            errors = []
+            
+            # Determine a retailer code: use first retailer in current basket if available, else "ah"
+            retailer_code = "ah"
+            try:
+                if basket and len(basket) > 0:
+                    first_item = basket[0]
+                    existing_retailer = first_item.get("retailer")
+                    if existing_retailer:
+                        retailer_code = existing_retailer
+            except Exception:
+                pass
+            
+            for item in essentials:
+                try:
+                    # Use add_to_cart_backend with correct signature
+                    resp = add_to_cart_backend(
+                        session_id=session_id,
+                        retailer=retailer_code,
+                        product_id=item["id"],
+                        name=item["name"],
+                        price_eur=item["price"],
+                        quantity=1,
+                    )
+                    if resp is not None:
+                        added += 1
+                except Exception:
+                    errors.append(item["name"])
+            
+            # Log analytics
+            try:
+                log_weekly_essentials_added(session_id=session_id, item_count=added)
+            except Exception:
+                pass
+            
+            if added > 0:
+                st.success(f"Added {added} weekly essentials to your basket (demo).")
+            if errors:
+                st.warning("Some essentials may not have been added. You can review your basket below.")
+        
+        # 3. View cheaper / healthier swaps (CTA)
+        st.markdown("#### Explore cheaper or healthier swaps")
+        
+        if st.button("View smart swaps for this basket", key="btn_swaps_cta", use_container_width=True):
+            try:
+                log_swaps_cta_clicked(session_id=session_id)
+            except Exception:
+                pass
+            
+            st.info(
+                "Scroll down to the **Smart suggestions** section to see suggested swaps "
+                "for cheaper or healthier alternatives (where available)."
+            )
+    
+    with next_steps_col2:
+        # 4. Export shopping list (.txt)
+        st.markdown("#### Export shopping list (offline mode)")
+        
+        # Build a simple text representation of the basket
+        lines = []
+        if basket:
+            for item in basket:
+                name = item.get("name") or item.get("product_name") or "Unknown item"
+                qty = item.get("quantity", 1)
+                lines.append(f"{qty} x {name}")
+        
+        shopping_list_text = "\n".join(lines) if lines else "No items in basket."
+        
+        # Provide a download button using st.download_button
+        if st.download_button(
+            label="Download shopping list (.txt)",
+            data=shopping_list_text.encode("utf-8"),
+            file_name="shopping_list.txt",
+            mime="text/plain",
+            key="btn_download_shopping_list",
+        ):
+            # Log analytics when user actually triggers the download
+            try:
+                item_count = len(basket) if basket else 0
+                log_shopping_list_exported(session_id=session_id, item_count=item_count)
+            except Exception:
+                pass
+        
+        # 5. Mock "Connect with delivery services"
+        st.markdown("#### Connect with delivery services (demo)")
+        
+        with st.expander("Pretend checkout options"):
+            st.caption("These are mock actions to simulate connecting your basket to Dutch delivery services.")
+            
+            def _mock_checkout_button(label: str, retailer_code: str, key: str) -> None:
+                if st.button(label, key=key, use_container_width=True):
+                    st.success(f"Pretend checkout started with {label} (demo).")
+                    
+                    try:
+                        log_checkout_mock_started(session_id=session_id, retailer=retailer_code)
+                    except Exception:
+                        pass
+            
+            _mock_checkout_button("Mock checkout with Albert Heijn", "ah", "btn_mock_checkout_ah")
+            _mock_checkout_button("Mock checkout with Jumbo", "jumbo", "btn_mock_checkout_jumbo")
+            _mock_checkout_button("Mock checkout with Picnic", "picnic", "btn_mock_checkout_picnic")
+    
+    st.markdown("")  # Add spacing
+    
     st.markdown("### Basket summary")
     st.caption("All items currently in your basket. Adjust quantities or remove items here.")
     
