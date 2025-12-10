@@ -493,23 +493,22 @@ def render_recipe_card(recipe: Recipe, profile, session_id: str) -> None:
                 )
         
         # Details expander (ingredients + steps)
-        expander_key = f"recipe_expander_{recipe.id}"
-        with st.expander("View ingredients & steps", key=expander_key):
+        with st.expander("View ingredients & steps"):
             # Log recipe viewed event once per session
-            try:
-                from aggregator.events import log_recipe_viewed
-                view_key = f"recipe_viewed_{recipe.id}"
-                if view_key not in st.session_state:
+            viewed_flag_key = f"recipe_{recipe.id}_viewed"
+            if not st.session_state.get(viewed_flag_key, False):
+                # Best-effort analytics: log recipe_viewed once per session
+                try:
+                    from aggregator.events import log_recipe_viewed
                     log_recipe_viewed(
                         session_id=session_id,
                         recipe_id=recipe.id,
                         recipe_name=recipe.title,
                         associated_items_count=len(recipe.ingredients),
                     )
-                    st.session_state[view_key] = True
-            except Exception:
-                # Non-blocking: if logging fails, continue anyway
-                pass
+                except Exception:
+                    pass  # Non-blocking: continue even if logging fails
+                st.session_state[viewed_flag_key] = True
             
             st.markdown("**Ingredients**")
             for item in recipe.ingredients:
