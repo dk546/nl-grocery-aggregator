@@ -31,7 +31,7 @@ from utils.preferences import (
     PREFERENCE_BUDGET_FIRST,
 )
 from ui.styles import load_global_styles
-from ui.layout import page_header, section, card, kpi_row, render_basket_button
+from ui.layout import page_header, section, card, kpi_row, render_basket_button, preferences_summary_text
 from ui.style import render_footer
 from ui.feedback import show_empty_state
 from ui.charts import (
@@ -129,6 +129,10 @@ page_header(
     subtitle="Quick overview of your basket's health balance and improvement opportunities.",
     right=lambda: render_basket_button(session_id, "health")
 )
+
+# Context caption (1-line, subtle)
+prefs_summary = preferences_summary_text()
+st.caption(f"Based on: {prefs_summary}")
 
 # Calculate health score category
 if score >= 80:

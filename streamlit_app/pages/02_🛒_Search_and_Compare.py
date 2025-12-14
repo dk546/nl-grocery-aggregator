@@ -30,7 +30,7 @@ from utils.api_client import search_products, add_to_cart_backend, view_cart_bac
 from utils.sponsored_data import get_sponsored_deals_for_search
 from utils.retailers import RETAILER_OPTIONS, DEFAULT_RETAILERS, get_retailer_display_name
 from ui.styles import load_global_styles
-from ui.layout import page_header, section, card, render_basket_button
+from ui.layout import page_header, section, card, render_basket_button, preferences_bar
 from ui.style import render_footer  # Keep footer function
 from ui.style import pill_tag  # Keep pill_tag helper
 from ui.feedback import show_error, show_empty_state, working_spinner
@@ -47,6 +47,9 @@ page_header(
     subtitle="Search across Albert Heijn, Jumbo, Dirk and Picnic, then add the best options to your basket.",
     right=lambda: render_basket_button(session_id, "search")
 )
+
+# Preferences bar (collapsed)
+preferences_bar(mode="collapsed", location_key="search")
 
 # Define options mappings (needed both inside and outside form)
 # Use centralized retailer configuration

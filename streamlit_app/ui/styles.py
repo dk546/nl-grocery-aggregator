@@ -204,13 +204,31 @@ def load_global_styles() -> None:
             margin-top: 0.5rem !important;
         }
         
-        /* Footer */
+        /* Status badge (compact inline) */
+        .status-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 999px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            background-color: #f0f9f4;
+            color: #0b7043;
+            border: 1px solid rgba(11, 112, 67, 0.2);
+        }
+        
+        .status-badge.status-offline {
+            background-color: #fef2f2;
+            color: #991b1b;
+            border-color: rgba(153, 27, 27, 0.2);
+        }
+        
+        /* Footer - demoted (reduced padding and font size) */
         .nlga-footer {
-            margin-top: 2rem !important;
-            padding: 2rem 0 1.5rem 0 !important;
+            margin-top: var(--space-4) !important;
+            padding: var(--space-3) 0 var(--space-2) 0 !important;
             background: linear-gradient(180deg, #d9f2ea 0%, #c4e6dd 100%) !important;
-            border-top-left-radius: 24px !important;
-            border-top-right-radius: 24px !important;
+            border-top-left-radius: 16px !important;
+            border-top-right-radius: 16px !important;
         }
         
         .nlga-footer-inner {
@@ -218,18 +236,20 @@ def load_global_styles() -> None:
             margin: 0 auto !important;
             display: grid !important;
             grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)) !important;
-            gap: 1.5rem !important;
-            font-size: 0.9rem !important;
+            gap: var(--space-2) !important;
+            font-size: 0.85rem !important;
         }
         
         .nlga-footer-col h4,
         .nlga-footer-col h5 {
-            margin-bottom: 0.5rem !important;
-            font-weight: 700 !important;
+            margin-bottom: var(--space-1) !important;
+            font-weight: 600 !important;
+            font-size: 0.9rem !important;
         }
         
         .nlga-footer-col p {
-            margin: 0.25rem 0 !important;
+            margin: 0.15rem 0 !important;
+            font-size: 0.85rem !important;
         }
         
         .nlga-footer-col ul {
@@ -240,6 +260,7 @@ def load_global_styles() -> None:
         
         .nlga-footer-col li {
             margin: 0.15rem 0 !important;
+            font-size: 0.8rem !important;
         }
         
         .nlga-footer-pill {
@@ -248,7 +269,7 @@ def load_global_styles() -> None:
             border-radius: 999px !important;
             background-color: #0b7043 !important;
             color: #ffffff !important;
-            font-size: 0.8rem !important;
+            font-size: 0.75rem !important;
         }
         
         /* Columns gap consistency */
@@ -263,7 +284,18 @@ def load_global_styles() -> None:
         
         /* Page header styling - tightened spacing using tokens */
         .nlga-page-header {
-            margin-bottom: var(--space-4) !important;
+            margin-bottom: var(--space-2) !important;
+        }
+        
+        /* Home page: reduce spacing around expanders (secondary content) */
+        .element-container:has([data-testid="stExpander"]) {
+            margin-top: var(--space-2) !important;
+            margin-bottom: var(--space-2) !important;
+        }
+        
+        /* Compact CTA section spacing */
+        h4 + .element-container {
+            margin-top: var(--space-1) !important;
         }
         
         .nlga-page-header h1 {

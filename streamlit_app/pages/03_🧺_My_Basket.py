@@ -53,7 +53,7 @@ from utils.preferences import (
 )
 from utils.retailers import get_retailer_display_name
 from ui.styles import load_global_styles
-from ui.layout import page_header, section, card, kpi_row
+from ui.layout import page_header, section, card, kpi_row, preferences_bar
 from ui.style import render_footer
 from ui.feedback import show_empty_state  # Keep footer function
 from ui.style import pill_tag  # Keep pill_tag helper
@@ -66,6 +66,9 @@ page_header(
     title="My Basket",
     subtitle="Review items, save money with swaps, and export your shopping list."
 )
+
+# Preferences bar (collapsed)
+preferences_bar(mode="collapsed", location_key="basket")
 
 # Get session ID for cart operations (using shared helper from app.py)
 session_id = get_or_create_session_id()

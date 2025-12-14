@@ -5,8 +5,8 @@ This is the main Streamlit application entry point. It sets up the page configur
 and provides the global layout with sidebar navigation and backend status.
 
 Note: Multi-page routing is handled automatically by Streamlit via the `pages/` folder.
-Files in `pages/` starting with numbered prefixes (e.g., `01_🏠_Home.py`) will appear
-as pages in the sidebar navigation.
+Files in `pages/` starting with numbered prefixes will appear as pages in the sidebar navigation.
+The main Home page content is rendered directly in this file (app.py) when no specific page is selected.
 """
 
 import sys
@@ -30,19 +30,10 @@ import api.config  # noqa: F401
 import streamlit as st
 
 from utils.api_client import get_health_status, get_cart_summary, view_cart_backend
-from utils.ui_components import render_backend_status, render_db_status
 from utils.session import get_or_create_session_id
-from utils.profile import HOUSEHOLD_PROFILES, DEFAULT_PROFILE_KEY, get_profile_by_key
-from utils.preferences import (
-    get_user_preferences_from_session,
-    save_user_preferences_to_session,
-    ALLOWED_DIETARY_TAGS,
-    PREFERENCE_HEALTH_BALANCED,
-    PREFERENCE_HEALTH_FIRST,
-    PREFERENCE_BUDGET_FIRST,
-)
+from utils.profile import DEFAULT_PROFILE_KEY
 from ui.styles import load_global_styles
-from ui.layout import page_header, section, card, kpi_row
+from ui.layout import page_header, section, card, kpi_row, preferences_bar
 from ui.style import render_footer  # Keep footer function
 
 # Initialize session ID early for cart operations
@@ -84,111 +75,6 @@ with st.sidebar:
             st.switch_page("pages/03_🧺_My_Basket.py")
     
     st.divider()
-    
-    # Household Profile card
-    st.markdown('<div class="nlga-card nlga-card--sidebar">', unsafe_allow_html=True)
-    st.markdown("#### Household")
-    st.caption("We'll tailor servings & insights to this profile.")
-    
-    profile_keys = list(HOUSEHOLD_PROFILES.keys())
-    profile_labels = [HOUSEHOLD_PROFILES[k].label for k in profile_keys]
-    
-    try:
-        current_index = profile_keys.index(st.session_state["household_profile_key"])
-    except ValueError:
-        current_index = profile_keys.index(DEFAULT_PROFILE_KEY)
-    
-    selected_label = st.selectbox(
-        "Who are we shopping for?",
-        options=profile_labels,
-        index=current_index,
-        help="We'll lightly tailor servings and insights based on your household type.",
-        label_visibility="collapsed",
-    )
-    
-    # Map label back to key
-    selected_key = profile_keys[profile_labels.index(selected_label)]
-    st.session_state["household_profile_key"] = selected_key
-    
-    current_profile = get_profile_by_key(selected_key)
-    
-    # Show one-line hint with profile info
-    budget_hint = f"~€{current_profile.typical_weekly_budget_hint:.0f}/week" if current_profile.typical_weekly_budget_hint else ""
-    servings_info = f"{int(current_profile.serving_multiplier)} servings"
-    hint_parts = []
-    if budget_hint:
-        hint_parts.append(budget_hint)
-    hint_parts.append(servings_info)
-    if hint_parts:
-        st.caption(" • ".join(hint_parts))
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    st.divider()
-    
-    # Food Preferences card
-    st.markdown('<div class="nlga-card nlga-card--sidebar">', unsafe_allow_html=True)
-    st.markdown("#### Food preferences")
-    
-    prefs = get_user_preferences_from_session()
-    
-    health_focus_label = st.radio(
-        "What should we prioritize?",
-        options=[
-            PREFERENCE_HEALTH_BALANCED,
-            PREFERENCE_HEALTH_FIRST,
-            PREFERENCE_BUDGET_FIRST,
-        ],
-        format_func=lambda v: {
-            PREFERENCE_HEALTH_BALANCED: "A bit of both",
-            PREFERENCE_HEALTH_FIRST: "Healthier choices first",
-            PREFERENCE_BUDGET_FIRST: "Lowest prices first",
-        }.get(v, v),
-        index=[
-            PREFERENCE_HEALTH_BALANCED,
-            PREFERENCE_HEALTH_FIRST,
-            PREFERENCE_BUDGET_FIRST,
-        ].index(prefs.health_focus),
-        help="We'll use this to sort smart suggestions and interpret your health insights.",
-    )
-    
-    dietary_selection = st.multiselect(
-        "Dietary preferences (optional)",
-        options=ALLOWED_DIETARY_TAGS,
-        default=prefs.dietary_tags,
-        format_func=lambda v: {
-            "vegetarian": "Vegetarian",
-            "vegan": "Vegan",
-            "halal": "Halal",
-            "no_pork": "No pork",
-            "lactose_free": "Lactose-free",
-            "gluten_free": "Gluten-free",
-            "low_sugar": "Low sugar",
-        }.get(v, v),
-        help="We don't filter products yet, but we'll use this in your insights and future recipe suggestions.",
-    )
-    
-    # Save back to session
-    prefs.health_focus = health_focus_label
-    prefs.dietary_tags = dietary_selection
-    save_user_preferences_to_session(prefs)
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    st.divider()
-    
-    # System status - compact
-    with st.expander("System status", expanded=False):
-        backend_status = get_health_status()
-        status_emoji = "🟢" if backend_status and backend_status.get("status") == "ok" else "🔴"
-        st.markdown(f"**Backend:** {status_emoji}")
-        render_backend_status(backend_status)
-        
-        # Database status
-        db_enabled = False
-        if backend_status:
-            raw_status = backend_status.get("raw", {})
-            db_enabled = raw_status.get("db_enabled", False)
-        render_db_status(db_enabled)
 
 # Main content area - Home Page
 # For multi-page apps, Streamlit automatically shows the selected page content
@@ -214,22 +100,30 @@ else:
     basket_total = 0.0
     retailers_count = 0
 
+# Backend status (compact inline badge)
 backend_status = get_health_status()
-mode_text = "Live" if backend_status and backend_status.get("status") == "ok" else "Offline"
+mode_text = "online" if backend_status and backend_status.get("status") == "ok" else "offline (limited mode)"
+status_dot = "●"
+status_color_class = "online" if mode_text == "online" else "offline"
+
+status_col1, status_col2 = st.columns([5, 1])
+with status_col1:
+    st.markdown(f'<span class="status-badge status-{status_color_class}">{status_dot} {mode_text.capitalize()}</span>', unsafe_allow_html=True)
+with status_col2:
+    if st.button("System Status", use_container_width=True, type="secondary"):
+        st.switch_page("pages/99_🔧_System_Status.py")
 
 # KPI row
 kpi_row([
     {"label": "Basket items", "value": basket_items_count if basket_items_count > 0 else "—", "icon": "🧺"},
     {"label": "Basket total", "value": f"€{basket_total:.2f}" if basket_total > 0 else "—", "icon": "💶"},
     {"label": "Retailers", "value": retailers_count if retailers_count > 0 else "—", "icon": "🏪"},
-    {"label": "Mode", "value": mode_text, "icon": "⚡"},
+    {"label": "Mode", "value": mode_text.split()[0] if mode_text != "online" else mode_text, "icon": "⚡"},
 ])
-
-st.markdown("<br>", unsafe_allow_html=True)
 
 # Prominent CTA buttons
 st.markdown("#### Get started")
-cta_col1, cta_col2, cta_col3 = st.columns(3, gap="medium")
+cta_col1, cta_col2, cta_col3 = st.columns([2, 1, 1], gap="medium")
 
 with cta_col1:
     if st.button("Start Search", use_container_width=True, type="primary"):
@@ -240,10 +134,11 @@ with cta_col2:
         st.switch_page("pages/03_🧺_My_Basket.py")
 
 with cta_col3:
-    if st.button("Health Insights", use_container_width=True):
+    if st.button("Health Insights", use_container_width=True, type="secondary"):
         st.switch_page("pages/04_📊_Health_Insights.py")
 
-st.divider()
+# Preferences bar (expanded on home)
+preferences_bar(mode="expanded", location_key="home")
 
 # How it works - in expander to keep page minimal
 with st.expander("How it works", expanded=False):
@@ -253,7 +148,65 @@ with st.expander("How it works", expanded=False):
     3. **Get Insights** – Review your basket's health breakdown and explore healthier alternatives.
     """)
 
-st.markdown("<br>", unsafe_allow_html=True)
+# What you can do - collapsed expander with key features
+with st.expander("What you can do", expanded=False):
+    feature_col1, feature_col2, feature_col3 = st.columns(3, gap="medium")
+    
+    with feature_col1:
+        st.markdown("**🔍 Search & Compare**")
+        st.caption("Search across retailers, compare prices, find best deals.")
+    
+    with feature_col2:
+        st.markdown("**🧺 My Basket**")
+        st.caption("Build shopping lists, track totals, manage weekly planning.")
+    
+    with feature_col3:
+        st.markdown("**📊 Health Insights**")
+        st.caption("Review health breakdown, get swap suggestions.")
+
+# Health tagging disclaimer - collapsed expander
+with st.expander("Health tagging (disclaimer)", expanded=False):
+    st.info("Products are automatically tagged as **healthy**, **unhealthy**, or **neutral** based on nutritional information. These tags are approximations and should not be considered medical advice.")
+    st.caption("⚠️ **Important**: Health tags are approximate. Always verify product information on the retailer's website before making purchase decisions.")
+
+# Sponsored spotlight (demo) - collapsed expander
+with st.expander("Sponsored (demo)", expanded=False):
+    try:
+        from utils.sponsored_data import get_sponsored_deals_for_search
+        from utils.retailers import get_retailer_display_name
+        
+        home_sponsored = get_sponsored_deals_for_search(query=None, retailer_codes=None, max_deals=2)
+        
+        if home_sponsored:
+            cols = st.columns(len(home_sponsored))
+            for col, deal in zip(cols, home_sponsored):
+                with col:
+                    with card():
+                        st.markdown("**⭐ Sponsored**")
+                        st.markdown(f"**{deal.title}**")
+                        st.markdown(f"**€{deal.price_eur:.2f}**")
+                        st.caption(deal.promo_text)
+                        
+                        retailer_label = get_retailer_display_name(deal.retailer)
+                        st.caption(f"🛒 {retailer_label}")
+                        
+                        if deal.product_url:
+                            st.link_button(
+                                "View product",
+                                url=deal.product_url,
+                                use_container_width=True
+                            )
+                        else:
+                            st.button(
+                                "View product",
+                                disabled=True,
+                                use_container_width=True,
+                                key=f"home_sponsored_{deal.id}",
+                            )
+        else:
+            st.caption("Sponsored slots appear here when configured.")
+    except Exception:
+        st.caption("Sponsored content unavailable.")
 
 # Footer
 render_footer()

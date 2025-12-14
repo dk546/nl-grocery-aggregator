@@ -30,7 +30,7 @@ from utils.api_client import search_products, add_to_cart_backend
 from utils.profile import get_profile_by_key, HOUSEHOLD_PROFILES
 from streamlit_app.utils.recipes_data import Recipe
 from ui.styles import load_global_styles
-from ui.layout import page_header, section, card, render_basket_button
+from ui.layout import page_header, section, card, render_basket_button, preferences_bar
 from ui.style import render_footer  # Keep footer function
 from ui.style import pill_tag  # Keep pill_tag helper
 from ui.feedback import show_empty_state, working_spinner
@@ -325,6 +325,9 @@ page_header(
     subtitle="Simple, healthy meal ideas tailored to your household.",
     right=lambda: render_basket_button(session_id, "recipes")
 )
+
+# Preferences bar (collapsed)
+preferences_bar(mode="collapsed", location_key="recipes")
 
 # Short caption + optional expander
 profile_key = st.session_state.get("household_profile_key", "single")

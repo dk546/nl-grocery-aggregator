@@ -1,8 +1,8 @@
 """
-Home Page - Welcome and Overview.
+About (Demo) Page - Overview and Demo Content.
 
 This page provides an introduction to the NL Grocery Aggregator application,
-explaining its features and purpose.
+explaining its features and purpose. This is a demo/overview page, not the main Home.
 """
 
 import sys
@@ -16,13 +16,19 @@ if str(streamlit_app_dir) not in sys.path:
 import streamlit as st
 
 from utils.api_client import get_health_status
-from utils.ui_components import render_header, render_backend_status, render_feature_card
+from utils.ui_components import render_backend_status, render_feature_card
 from utils.sponsored_data import get_sponsored_deals_for_search
 from utils.retailers import get_retailer_display_name
+from ui.styles import load_global_styles
+from ui.layout import page_header, section, card
+from ui.style import render_footer
 
-render_header(
-    "🏠 Home",
-    "Your smart Dutch grocery assistant – search, compare, and shop healthier."
+# Inject global CSS styling
+load_global_styles()
+
+page_header(
+    title="ℹ️ About (demo)",
+    subtitle="Overview and demo content for NL Grocery Aggregator."
 )
 
 # Introduction
@@ -127,4 +133,7 @@ st.caption("""
 Health tags are approximate and for informational purposes only. Always verify product information
 on the retailer's website before making purchase decisions.
 """)
+
+# Footer
+render_footer()
 
