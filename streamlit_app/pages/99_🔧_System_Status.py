@@ -20,13 +20,19 @@ if str(project_root) not in sys.path:
 
 import streamlit as st
 
-from utils.api_client import get_health_status, get_backend_url
-from utils.ui_components import render_header, render_backend_status, render_db_status
+from utils.api_client import get_health_status, get_backend_url, add_to_cart_backend, view_cart_backend, remove_from_cart_backend
+from utils.ui_components import render_backend_status, render_db_status
+from utils.session import get_or_create_session_id
+from ui.styles import load_global_styles
+from ui.layout import page_header
+from ui.style import render_footer
 
-render_header(
-    "🔧 System Status",
-    "Backend health, diagnostics, and API documentation.",
-    show_basket_link=False
+# Inject global CSS styling
+load_global_styles()
+
+page_header(
+    title="🔧 System Status",
+    subtitle="Backend health, diagnostics, and API documentation."
 )
 
 st.caption("This page shows the current status of the backend API and connectors that power search, basket, and insights.")
@@ -166,8 +172,90 @@ with st.expander("🔮 Planned System Diagnostics", expanded=False):
     - **Service Health**: Overall system availability and reliability
     """)
 
+st.divider()
+
+# Demo Controls Section
+with st.expander("Demo controls", expanded=False):
+    st.caption("Use these controls to reset the demo state or load sample data.")
+    
+    demo_col1, demo_col2, demo_col3 = st.columns(3, gap="small")
+    
+    with demo_col1:
+        if st.button("Reset session", use_container_width=True, type="secondary"):
+            # Clear search-related state
+            keys_to_clear = [
+                "search_query", "search_retailers", "search_results",
+                "search_connectors_status", "search_sort_by",
+                "basket_savings", "savings_data", "export_ready",
+                "export_shopping_list_text", "selected_items_for_basket",
+                "planned_recipes", "recipe_search", "selected_category_tag"
+            ]
+            for key in keys_to_clear:
+                if key in st.session_state:
+                    del st.session_state[key]
+            
+            # Clear cart via backend
+            try:
+                session_id = get_or_create_session_id()
+                cart_data = view_cart_backend(session_id)
+                if cart_data and cart_data.get("items"):
+                    # Remove all items from cart
+                    for item in cart_data["items"]:
+                        try:
+                            remove_from_cart_backend(
+                                session_id=session_id,
+                                retailer=item.get("retailer", ""),
+                                product_id=item.get("product_id", ""),
+                                qty=item.get("quantity", 1)
+                            )
+                        except Exception:
+                            pass  # Non-blocking: continue clearing other items
+            except Exception:
+                pass  # Non-blocking
+            
+            st.toast("✅ Done", icon="✅")
+            st.rerun()
+    
+    with demo_col2:
+        if st.button("Load demo basket", use_container_width=True, type="secondary"):
+            # Load a small fixed set of example items
+            demo_items = [
+                {"retailer": "ah", "product_id": "demo-milk", "name": "Demo: Milk 1L", "price_eur": 1.25, "quantity": 1},
+                {"retailer": "ah", "product_id": "demo-bread", "name": "Demo: Bread (wholegrain)", "price_eur": 1.80, "quantity": 1},
+                {"retailer": "jumbo", "product_id": "demo-eggs", "name": "Demo: Eggs (10-pack)", "price_eur": 2.50, "quantity": 1},
+                {"retailer": "ah", "product_id": "demo-fruit", "name": "Demo: Seasonal fruit", "price_eur": 3.00, "quantity": 1},
+            ]
+            
+            try:
+                session_id = get_or_create_session_id()
+                added_count = 0
+                for item in demo_items:
+                    result = add_to_cart_backend(
+                        session_id=session_id,
+                        retailer=item["retailer"],
+                        product_id=item["product_id"],
+                        name=item["name"],
+                        price_eur=item["price_eur"],
+                        quantity=item["quantity"]
+                    )
+                    if result is not None:
+                        added_count += 1
+                
+                if added_count > 0:
+                    st.toast("✅ Done", icon="✅")
+                else:
+                    st.toast("⚠️ Error", icon="⚠️")
+            except Exception as e:
+                st.toast("⚠️ Error", icon="⚠️")
+    
+    with demo_col3:
+        if st.button("Clear cache", use_container_width=True, type="secondary"):
+            # Clear Streamlit cache
+            st.cache_data.clear()
+            st.toast("✅ Done", icon="✅")
+
 st.markdown("---")
-image_card("status_footer", caption="Behind the scenes keeping your fresh food data flowing.")
+# Removed decorative image
 
 # Footer
 render_footer()

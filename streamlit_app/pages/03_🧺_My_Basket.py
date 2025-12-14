@@ -52,16 +52,19 @@ from utils.preferences import (
     PREFERENCE_BUDGET_FIRST,
 )
 from utils.retailers import get_retailer_display_name
-from ui.style import inject_global_css, section_header, pill_tag, image_card, render_footer
+from ui.styles import load_global_styles
+from ui.layout import page_header, section, card, kpi_row
+from ui.style import render_footer
+from ui.feedback import show_empty_state  # Keep footer function
+from ui.style import pill_tag  # Keep pill_tag helper
 
 # Inject global CSS styling
-inject_global_css()
+load_global_styles()
 
 # Page header
-section_header(
-    title="Your basket",
-    eyebrow="SMART WEEKLY SHOPPING",
-    help_text="Review your items, explore cheaper swaps, and check totals per supermarket."
+page_header(
+    title="My Basket",
+    subtitle="Review items, save money with swaps, and export your shopping list."
 )
 
 # Get session ID for cart operations (using shared helper from app.py)
@@ -88,10 +91,12 @@ else:
     }
 
 if not basket:
-    # Empty basket state
-    st.info(
-        "Your basket is empty. Start by adding items from **Search & Compare**.\n\n"
-        "Tip: Try searching for *volkoren pasta*, *havermout*, or *paprika* to begin your weekly shop."
+    # Empty basket state - modern friendly card
+    show_empty_state(
+        title="Your basket is empty",
+        subtitle="Start by searching for products and adding them to your basket.",
+        action_label="Start searching",
+        action_page_path="pages/02_🛒_Search_and_Compare.py"
     )
     st.stop()
 
@@ -105,195 +110,146 @@ profile_key = st.session_state.get("household_profile_key")
 profile = HOUSEHOLD_PROFILES.get(profile_key) if profile_key else None
 weekly_budget = profile.typical_weekly_budget_hint if profile and profile.typical_weekly_budget_hint else None
 
-# Top metrics band (now with 5 columns for budget)
-metrics_cols = st.columns([1, 1, 1, 1, 1], gap="large")
+# Calculate average per item
+avg_per_item = summary["total_price"] / summary["count_items"] if summary["count_items"] > 0 else 0.0
 
-with metrics_cols[0]:
-    st.metric("Items", summary["count_items"])
+# Calculate savings (check if savings data exists in session state)
+savings_amount = None
+if "savings_data" in st.session_state:
+    savings_data = st.session_state.get("savings_data")
+    if savings_data:
+        savings_amount = float(savings_data.get("potential_savings_total", 0.0))
 
-with metrics_cols[1]:
-    st.metric("Total cost", f"€{summary['total_price']:.2f}")
+# KPI row
+kpi_row([
+    {"label": "Items", "value": summary["count_items"], "icon": "🧺"},
+    {"label": "Total", "value": f"€{summary['total_price']:.2f}", "icon": "💶"},
+    {"label": "Avg / item", "value": f"€{avg_per_item:.2f}" if avg_per_item > 0 else "—", "icon": "📊"},
+    {"label": "Savings", "value": f"€{savings_amount:.2f}" if savings_amount and savings_amount > 0 else "—", "icon": "💰"},
+])
 
-with metrics_cols[2]:
-    st.metric("Retailers", summary["unique_retailer_count"])
+st.markdown("<br>", unsafe_allow_html=True)
 
-with metrics_cols[3]:
-    st.metric("Healthy items", healthy_count)
+# Primary Action Bar (above-the-fold)
+action_col1, action_col2, action_col3 = st.columns(3, gap="medium")
 
-with metrics_cols[4]:
-    if weekly_budget:
-        basket_total = summary['total_price']
-        used_ratio = basket_total / weekly_budget
-        used_pct = min(used_ratio * 100, 999)
-        st.metric("Weekly budget used", f"{used_pct:.0f}%")
-    else:
-        st.metric("Weekly budget used", "—")
+with action_col1:
+    if st.button("Health check", use_container_width=True, type="primary"):
+        try:
+            log_basket_health_check_clicked(session_id=session_id)
+        except Exception:
+            pass
+        st.switch_page("pages/04_📊_Health_Insights.py")
 
-if weekly_budget and profile:
-    st.caption(
-        f"Based on a typical weekly budget of ~€{weekly_budget:.0f} for your **{profile.label.lower()}** household."
-    )
-
-# Continue shopping CTA (when basket has items)
-st.markdown("---")
-col1, col2, col3 = st.columns([1, 2, 1])
-with col2:
-    try:
-        st.page_link(
-            "pages/02_🛒_Search_and_Compare.py",
-            label="🔍 Continue shopping",
-            icon="🔍",
-            use_container_width=True,
-        )
-    except (AttributeError, TypeError):
-        st.button("🔍 Continue shopping (go to Search & Compare)", use_container_width=True)
-
-st.divider()
-
-# Main layout: wide center for basket, side column for insights
-main_col, side_col = st.columns([2.2, 1], gap="large")
-
-# Main column: Basket table + item actions
-with main_col:
-    # Next Steps panel
-    st.markdown("### Next steps")
-    st.caption("Decide what to do with your current basket. You can check health, add essentials, explore swaps, export a list, or simulate online checkout (demo).")
-    
-    next_steps_col1, next_steps_col2 = st.columns(2, gap="medium")
-    
-    with next_steps_col1:
-        # 1. Health check for this basket
-        if st.button("See how healthy this basket is", key="btn_health_check", use_container_width=True):
-            # Log analytics
-            try:
-                log_basket_health_check_clicked(session_id=session_id)
-            except Exception:
-                pass
-            
-            # Simple navigation hint: tell user to click Health Insights in sidebar
-            st.info(
-                "To see a breakdown of healthier, neutral, and less healthy items, "
-                "open the **Health Insights** page from the sidebar."
-            )
+with action_col2:
+    if st.button("Find savings", use_container_width=True, type="secondary"):
+        try:
+            log_swaps_cta_clicked(session_id=session_id)
+        except Exception:
+            pass
         
-        # 2. Add missing weekly essentials (demo)
-        st.markdown("#### Add weekly essentials (demo)")
-        
-        if st.button("Add milk, bread, eggs & fruit", key="btn_add_essentials", use_container_width=True):
-            essentials = [
-                {"name": "[Essential] Milk 1L", "price": 1.25, "id": "essential-milk"},
-                {"name": "[Essential] Bread (wholegrain)", "price": 1.80, "id": "essential-bread"},
-                {"name": "[Essential] Eggs (10-pack)", "price": 2.50, "id": "essential-eggs"},
-                {"name": "[Essential] Seasonal fruit", "price": 3.00, "id": "essential-fruit"},
-            ]
+        # Trigger savings analysis
+        with st.spinner("Working…"):
+            savings_data = get_basket_savings(session_id)
+            if savings_data:
+                st.session_state["savings_data"] = savings_data
+                st.session_state["basket_savings"] = savings_data
+                suggestions_count = len(savings_data.get("suggestions", []))
+                if suggestions_count > 0:
+                    st.toast("✅ Done", icon="✅")
+                    st.rerun()
+                else:
+                    st.toast("✅ Done", icon="✅")
+            else:
+                st.toast("⚠️ Error", icon="⚠️")
+
+with action_col3:
+    # Export shopping list - improved flow
+    if st.button("Export list", use_container_width=True, type="secondary"):
+        # Prepare export data with spinner
+        with st.spinner("Preparing…"):
+            lines = []
+            if basket:
+                for item in basket:
+                    name = item.get("name") or item.get("product_name") or "Unknown item"
+                    qty = item.get("quantity", 1)
+                    lines.append(f"{qty} x {name}")
             
-            added = 0
-            errors = []
+            shopping_list_text = "\n".join(lines) if lines else "No items in basket."
             
-            # Determine a retailer code: use first retailer in current basket if available, else "ah"
-            retailer_code = "ah"
-            try:
-                if basket and len(basket) > 0:
-                    first_item = basket[0]
-                    existing_retailer = first_item.get("retailer")
-                    if existing_retailer:
-                        retailer_code = existing_retailer
-            except Exception:
-                pass
-            
-            for item in essentials:
-                try:
-                    # Use add_to_cart_backend with correct signature
-                    resp = add_to_cart_backend(
-                        session_id=session_id,
-                        retailer=retailer_code,
-                        product_id=item["id"],
-                        name=item["name"],
-                        price_eur=item["price"],
-                        quantity=1,
-                    )
-                    if resp is not None:
-                        added += 1
-                except Exception:
-                    errors.append(item["name"])
+            # Store in session state for download button
+            st.session_state["export_shopping_list_text"] = shopping_list_text
+            st.session_state["export_ready"] = True
             
             # Log analytics
-            try:
-                log_weekly_essentials_added(session_id=session_id, item_count=added)
-            except Exception:
-                pass
-            
-            if added > 0:
-                st.success(f"Added {added} weekly essentials to your basket (demo).")
-            if errors:
-                st.warning("Some essentials may not have been added. You can review your basket below.")
-        
-        # 3. View cheaper / healthier swaps (CTA)
-        st.markdown("#### Explore cheaper or healthier swaps")
-        
-        if st.button("View smart swaps for this basket", key="btn_swaps_cta", use_container_width=True):
-            try:
-                log_swaps_cta_clicked(session_id=session_id)
-            except Exception:
-                pass
-            
-            st.info(
-                "Scroll down to the **Smart suggestions** section to see suggested swaps "
-                "for cheaper or healthier alternatives (where available)."
-            )
-    
-    with next_steps_col2:
-        # 4. Export shopping list (.txt)
-        st.markdown("#### Export shopping list (offline mode)")
-        
-        # Build a simple text representation of the basket
-        lines = []
-        if basket:
-            for item in basket:
-                name = item.get("name") or item.get("product_name") or "Unknown item"
-                qty = item.get("quantity", 1)
-                lines.append(f"{qty} x {name}")
-        
-        shopping_list_text = "\n".join(lines) if lines else "No items in basket."
-        
-        # Provide a download button using st.download_button
-        if st.download_button(
-            label="Download shopping list (.txt)",
-            data=shopping_list_text.encode("utf-8"),
-            file_name="shopping_list.txt",
-            mime="text/plain",
-            key="btn_download_shopping_list",
-        ):
-            # Log analytics when user actually triggers the download
             try:
                 item_count = len(basket) if basket else 0
                 log_shopping_list_exported(session_id=session_id, item_count=item_count)
             except Exception:
                 pass
-        
-        # 5. Mock "Connect with delivery services"
-        st.markdown("#### Connect with delivery services (demo)")
-        
-        with st.expander("Pretend checkout options"):
-            st.caption("These are mock actions to simulate connecting your basket to Dutch delivery services.")
             
-            def _mock_checkout_button(label: str, retailer_code: str, key: str) -> None:
-                if st.button(label, key=key, use_container_width=True):
-                    st.success(f"Pretend checkout started with {label} (demo).")
-                    
-                    try:
-                        log_checkout_mock_started(session_id=session_id, retailer=retailer_code)
-                    except Exception:
-                        pass
-            
-            _mock_checkout_button("Mock checkout with Albert Heijn", "ah", "btn_mock_checkout_ah")
-            _mock_checkout_button("Mock checkout with Jumbo", "jumbo", "btn_mock_checkout_jumbo")
-            _mock_checkout_button("Mock checkout with Picnic", "picnic", "btn_mock_checkout_picnic")
+            st.toast("✅ Done", icon="✅")
+            st.rerun()
+
+# Show download buttons if export is ready (place after action bar)
+if st.session_state.get("export_ready", False):
+    export_text = st.session_state.get("export_shopping_list_text", "")
+    export_col1, export_col2 = st.columns([1, 1], gap="small")
     
-    st.markdown("")  # Add spacing
+    with export_col1:
+        if st.download_button(
+            label="📄 Download .txt",
+            data=export_text.encode("utf-8"),
+            file_name="shopping_list.txt",
+            mime="text/plain",
+            key="btn_download_txt",
+            use_container_width=True,
+        ):
+            st.session_state["export_ready"] = False
+            st.rerun()
     
-    st.markdown("### Basket summary")
-    st.caption("All items currently in your basket. Adjust quantities or remove items here.")
+    with export_col2:
+        # CSV export option
+        import csv
+        import io
+        csv_lines = []
+        if basket:
+            for item in basket:
+                name = item.get("name") or item.get("product_name") or "Unknown item"
+                qty = item.get("quantity", 1)
+                price = item.get("price_eur") or item.get("price", 0.0)
+                csv_lines.append([qty, name, f"€{price:.2f}"])
+        
+        csv_output = io.StringIO()
+        writer = csv.writer(csv_output)
+        writer.writerow(["Quantity", "Item", "Price"])
+        writer.writerows(csv_lines)
+        csv_data = csv_output.getvalue()
+        
+        if st.download_button(
+            label="📊 Download .csv",
+            data=csv_data.encode("utf-8"),
+            file_name="shopping_list.csv",
+            mime="text/csv",
+            key="btn_download_csv",
+            use_container_width=True,
+        ):
+            st.session_state["export_ready"] = False
+            st.rerun()
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+
+st.markdown("<br>", unsafe_allow_html=True)
+st.divider()
+
+# Main layout: wide center for basket, side column for summary
+main_col, side_col = st.columns([2.2, 1], gap="large")
+
+# Main column: Basket table + item actions
+with main_col:
+    st.markdown("### Basket items")
+    
+    # Basket items table (moved up for immediate visibility)
     
     # Basket items table
     
@@ -399,12 +355,11 @@ with main_col:
         key="basket_editor"
     )
     
-    st.markdown("### Basket actions")
-    
+    # Update basket button
     update_button = st.button(
         "💾 Update basket",
         type="primary",
-        width='stretch'
+        use_container_width=True
     )
     
     if update_button:
@@ -482,37 +437,114 @@ with main_col:
         else:
             st.info("ℹ️ No changes detected. Adjust quantities or use Remove checkboxes, then click Update basket.")
     
-    # Basket actions - Clear and Add More
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        if st.button("🗑️ Clear Entire Basket", type="secondary", width='stretch'):
-            # Clear basket by removing all items
-            cleared_count = 0
-            for item in basket:
-                retailer = item.get("retailer", "")
-                product_id = item.get("product_id", "")
-                quantity = item.get("quantity", 1)
-                
-                if retailer and product_id:
-                    result = remove_from_cart_backend(
-                        session_id=session_id,
-                        retailer=retailer,
-                        product_id=product_id,
-                        qty=quantity  # Remove entire quantity
-                    )
-                    if result is not None:
-                        cleared_count += 1
+    # Basket actions - Clear basket (keep but simplify)
+    if st.button("🗑️ Clear basket", type="secondary", use_container_width=True):
+        # Clear basket by removing all items
+        cleared_count = 0
+        for item in basket:
+            retailer = item.get("retailer", "")
+            product_id = item.get("product_id", "")
+            quantity = item.get("quantity", 1)
             
-            if cleared_count > 0:
-                st.success("✅ Basket cleared!")
-            else:
-                st.info("Basket was already empty.")
-            st.rerun()
+            if retailer and product_id:
+                result = remove_from_cart_backend(
+                    session_id=session_id,
+                    retailer=retailer,
+                    product_id=product_id,
+                    qty=quantity  # Remove entire quantity
+                )
+                if result is not None:
+                    cleared_count += 1
+        
+        if cleared_count > 0:
+            st.success("✅ Basket cleared!")
+        else:
+            st.info("Basket was already empty.")
+        st.rerun()
     
-    with col2:
-        if st.button("🔍 Add More Items", width='stretch'):
-            st.switch_page("pages/02_🛒_Search_and_Compare.py")
+    st.divider()
+    
+    # Secondary actions in collapsed expanders
+    with st.expander("Weekly essentials (demo)", expanded=False):
+        st.caption("Add common weekly items to your basket (demo feature).")
+        if st.button("Add milk, bread, eggs & fruit", key="btn_add_essentials", use_container_width=True):
+            essentials = [
+                {"name": "[Essential] Milk 1L", "price": 1.25, "id": "essential-milk"},
+                {"name": "[Essential] Bread (wholegrain)", "price": 1.80, "id": "essential-bread"},
+                {"name": "[Essential] Eggs (10-pack)", "price": 2.50, "id": "essential-eggs"},
+                {"name": "[Essential] Seasonal fruit", "price": 3.00, "id": "essential-fruit"},
+            ]
+            
+            added = 0
+            errors = []
+            
+            # Determine a retailer code: use first retailer in current basket if available, else "ah"
+            retailer_code = "ah"
+            try:
+                if basket and len(basket) > 0:
+                    first_item = basket[0]
+                    existing_retailer = first_item.get("retailer")
+                    if existing_retailer:
+                        retailer_code = existing_retailer
+            except Exception:
+                pass
+            
+            for item in essentials:
+                try:
+                    resp = add_to_cart_backend(
+                        session_id=session_id,
+                        retailer=retailer_code,
+                        product_id=item["id"],
+                        name=item["name"],
+                        price_eur=item["price"],
+                        quantity=1,
+                    )
+                    if resp is not None:
+                        added += 1
+                except Exception:
+                    errors.append(item["name"])
+            
+            # Log analytics
+            try:
+                log_weekly_essentials_added(session_id=session_id, item_count=added)
+            except Exception:
+                pass
+            
+            if added > 0:
+                st.toast("✅ Added to basket", icon="✅")
+                st.rerun()
+            if errors:
+                st.warning("Some essentials may not have been added.")
+    
+    with st.expander("Delivery services (demo)", expanded=False):
+        st.caption("Simulate connecting your basket to Dutch delivery services.")
+        
+        # Retailer buttons in a single row
+        checkout_col1, checkout_col2, checkout_col3 = st.columns(3, gap="small")
+        
+        with checkout_col1:
+            if st.button("Albert Heijn", key="btn_mock_checkout_ah", use_container_width=True):
+                st.toast("✅ Done", icon="✅")
+                try:
+                    log_checkout_mock_started(session_id=session_id, retailer="ah")
+                except Exception:
+                    pass
+        
+        with checkout_col2:
+            if st.button("Jumbo", key="btn_mock_checkout_jumbo", use_container_width=True):
+                st.toast("✅ Done", icon="✅")
+                try:
+                    log_checkout_mock_started(session_id=session_id, retailer="jumbo")
+                except Exception:
+                    pass
+        
+        with checkout_col3:
+            if st.button("Picnic", key="btn_mock_checkout_picnic", use_container_width=True):
+                st.toast("✅ Done", icon="✅")
+                try:
+                    log_checkout_mock_started(session_id=session_id, retailer="picnic")
+                except Exception:
+                    pass
     
     # Price trend (demo) section
     st.markdown("---")
@@ -579,9 +611,25 @@ with main_col:
     else:
         st.info("Add items to your basket to view price trends.")
 
-# Side column: retailer totals, savings, templates, insights
+# Side column: compact Summary Card
 with side_col:
-    image_card("basket_side", caption="Turn this basket into simple, balanced meals.")
+    with card("Summary"):
+        st.markdown(f"**Items:** {summary['count_items']}")
+        st.markdown(f"**Total:** €{summary['total_price']:.2f}")
+        
+        if weekly_budget and profile:
+            basket_total = summary['total_price']
+            used_ratio = basket_total / weekly_budget
+            used_pct = min(used_ratio * 100, 999)
+            st.markdown(f"**Budget used:** {used_pct:.0f}%")
+            st.caption(f"Based on ~€{weekly_budget:.0f}/week for {profile.label.lower()} household")
+        
+        st.markdown("---")
+        
+        if st.button("Continue shopping", use_container_width=True, type="primary"):
+            st.switch_page("pages/02_🛒_Search_and_Compare.py")
+    
+    st.markdown("---")
     
     # Smart Suggestions card
     suggestions = []
@@ -702,10 +750,9 @@ with side_col:
     
     # Totals per supermarket
     if cart_data and cart_data.get("total_by_retailer"):
-        section_header(
+        section(
             title="Totals per supermarket",
-            eyebrow="COST BREAKDOWN",
-            help_text="See which retailer is currently cheapest for your whole basket."
+            caption="See which retailer is currently cheapest for your whole basket."
         )
         retailer_totals = cart_data["total_by_retailer"]
         for retailer, amount in sorted(retailer_totals.items(), key=lambda x: x[1]):
@@ -717,45 +764,16 @@ with side_col:
         
         st.markdown("---")
     
-    # Savings Finder
-    if basket:
-        section_header(
-            title="Savings Finder",
-            eyebrow="CHEAPER OPTIONS",
-            help_text="Quick estimation of potential savings from cheaper swaps."
-        )
-        st.markdown('<div class="nlga-card nlga-card--sidebar">', unsafe_allow_html=True)
-        
-        st.caption("We'll look for cheaper alternatives to items in your basket.")
-        
-        # Check if user wants to analyze savings (store in session_state to preserve across reruns)
-        if "check_savings" not in st.session_state:
-            st.session_state["check_savings"] = False
-        
-        check_savings_button = st.button("🔎 Check for savings", width='stretch', type="primary")
-        
-        if check_savings_button:
-            st.session_state["check_savings"] = True
-        
-        # Load savings data if requested
-        savings_data = None
-        if st.session_state.get("check_savings", False):
-            with st.spinner("Looking for cheaper alternatives..."):
-                savings_data = get_basket_savings(session_id)
-                # Store in session_state to preserve across reruns (used by Weekly Savings Report)
-                if savings_data:
-                    st.session_state["savings_data"] = savings_data
-                    st.session_state["basket_savings"] = savings_data
-                else:
-                    st.session_state["basket_savings"] = None
-        elif "savings_data" in st.session_state:
-            # Use cached savings data if available
-            savings_data = st.session_state.get("savings_data")
-            # Also update basket_savings for Weekly Savings Report
-            st.session_state["basket_savings"] = savings_data
-        
-        # Display savings summary
-        if savings_data is not None:
+    # Savings Finder (shows results if savings data exists from action bar)
+    if basket and "savings_data" in st.session_state:
+        savings_data = st.session_state.get("savings_data")
+        if savings_data:
+            section(
+                title="Savings Finder",
+                caption="Potential savings from cheaper swaps."
+            )
+            st.markdown('<div class="nlga-card nlga-card--sidebar">', unsafe_allow_html=True)
+            
             suggestions = savings_data.get("suggestions", [])
             potential_savings_total = float(savings_data.get("potential_savings_total", 0.0))
             
@@ -764,15 +782,14 @@ with side_col:
                 st.caption(f"{len(suggestions)} swap(s) available")
             else:
                 st.caption("No cheaper alternatives found.")
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-        st.markdown("---")
+            
+            st.markdown('</div>', unsafe_allow_html=True)
+            st.markdown("---")
     
     # Saved baskets / templates
-    section_header(
+    section(
         title="Saved baskets",
-        eyebrow="TEMPLATES",
-        help_text="Reuse your favorite weekly shops with one click."
+        caption="Reuse your favorite weekly shops with one click."
     )
     st.markdown('<div class="nlga-card nlga-card--sidebar">', unsafe_allow_html=True)
     
@@ -846,10 +863,9 @@ with side_col:
     st.markdown("---")
     
     # Quick health summary
-    section_header(
+    section(
         title="Quick health summary",
-        eyebrow="INSIGHTS",
-        help_text="A lightweight breakdown of healthier vs. less healthy items."
+        caption="A lightweight breakdown of healthier vs. less healthy items."
     )
     st.markdown('<div class="nlga-card nlga-card--sidebar">', unsafe_allow_html=True)
     st.caption(f"🥦 Healthy items: {healthy_count}")

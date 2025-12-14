@@ -26,37 +26,59 @@ A full-stack application that aggregates grocery product search results from mul
 - **RESTful API**: Clean FastAPI endpoints with automatic OpenAPI documentation
 
 ### Frontend (Streamlit)
-- **Modern UI Design**: Card-based layouts, hero images, and consistent styling inspired by freasy.nl
+- **Modern UI System**: Modular UI architecture with reusable components
+  - `ui/layout.py`: Page headers, KPI rows, sections, and card containers
+  - `ui/styles.py`: Global CSS styling with tightened spacing and consistent design
+  - `ui/feedback.py`: Standardized error, empty state, and loading utilities
 - **Search & Compare**: Interactive product search with filters, health tags, and price comparison
-  - Two-column layout with side image cards
-  - Results summary with retailer highlights
+  - Modern minimalist header with basket quick access
+  - Compact product comparison table with inline add buttons
+  - Standardized error and empty states
+  - Safe caching for search results
 - **My Basket**: Comprehensive shopping cart management with:
-  - Dashboard-style two-column layout (basket table + side summaries)
-  - **Top Metrics Band**: Items count, total cost, retailers, healthy items, and weekly budget usage
-  - **Weekly Budget Projection**: See how much of your typical weekly budget you're using (household-aware)
+  - Dashboard-style layout with KPI metrics row
+  - **Primary Action Bar**: Health check, Find savings, Export list buttons
   - Quantity updates and item removal
   - **Smart Suggestions**: Automatic suggestions for cheaper or healthier alternatives (up to 3 shown)
   - **Savings Finder**: Find cheaper alternatives for items in your basket
+  - **Export List**: Export shopping list as .txt or .csv with improved UX flow
   - **Saved Baskets/Templates**: Save current basket as a template and reuse it later
   - Retailer totals breakdown
   - Session persistence across pages
-- **Health Insights**: Basket health analytics showing health tag distribution and spending by category
-  - Two-column layout with charts on left, summary and swaps on right
-  - Visual health breakdown with metrics
-- **Recipes & Ideas**: Recipe collection with one-click ingredient addition to basket
-  - Filters on left, recipe cards grid on right
-  - Recipe cards with images, tags, and expandable details
-  - Automatically finds the healthiest available products for each ingredient
-  - Falls back to cheapest option if health scores are tied
-  - Best-effort matching: adds what it can find, reports missing ingredients
+- **Health Insights**: Minimalist dashboard for basket health analytics
+  - Modern header with basket quick access
+  - KPI metrics row (Health score, % healthy, Items to improve, Variety)
+  - Primary visual: Donut chart with percentage labels showing basket composition
+  - Key takeaways card with 3 actionable insights
+  - Top categories stacked bar chart (conditional)
+  - Health-based swap suggestions in expander
+  - Safe caching for health aggregates computation
+- **Recipes**: Modern recipe collection with compact card grid
+  - Modern header with basket quick access
+  - Compact recipe cards with title, summary, tags, and action buttons
+  - "Add ingredients" button for one-click basket addition
+  - Expandable details (ingredients & steps) for each recipe
+  - Filters on left, 3-column recipe grid on right
+  - Safe caching for recipe filtering (5-minute TTL)
+  - Standardized empty states
 - **Analytics Dashboard** (Internal): Internal analytics dashboard for event visualization
   - Event counts visualization with bar charts
-  - Recent events table with timestamp, event type, session ID, and payload
+  - Summary metrics row (total events, searches, cart adds, swaps)
+  - Recent events table with event type filtering
+  - CSV download for recent events
   - Time window selection (6 hours to 7 days)
   - Gracefully handles database disabled state
   - Shows backend and database status
+  - "Last updated" timestamp
 - **System Status**: Backend health monitoring and API documentation links
-- **Brand Footer**: Consistent footer across all pages with brand colors and information
+  - Demo controls expander: Reset session, Load demo basket, Clear cache
+  - Backend and database status monitoring
+- **Consistent UX**: 
+  - Basket quick access button in page headers (Search, Health Insights, Recipes)
+  - Standardized button labels across all pages
+  - Consistent error/empty/loading states
+  - Tightened spacing for modern, compact feel
+  - No decorative images (clean, focused design)
 
 ## Project Structure
 
@@ -100,7 +122,10 @@ nl-grocery-aggregator/
 │   ├── assets/             # Hero images and marketing assets
 │   │   └── *.jpg           # Healthy food images (Unsplash)
 │   ├── ui/                 # UI styling and components
-│   │   └── style.py         # Global CSS, hero banners, image cards, footer
+│   │   ├── styles.py        # Global CSS styling
+│   │   ├── layout.py        # Page headers, KPI rows, sections, cards
+│   │   ├── feedback.py      # Error, empty state, and loading utilities
+│   │   └── style.py         # Legacy footer and helper functions
 │   ├── utils/              # Frontend utilities
 │   │   ├── api_client.py   # Backend API client
 │   │   ├── session.py      # Session management
@@ -337,24 +362,33 @@ The API will be available at http://127.0.0.1:8000
 
 ### Search & Compare
 - **Product Search**: Search across multiple retailers with a single query
+- **Modern Header**: Minimalist header with basket quick access button showing item count
 - **Advanced Filters**: Filter by retailer, health category, and sort options
-- **Two-Column Layout**: Main results on left, side image card on right
-- **Results Summary**: Product count, retailers used, and highlight columns
+- **Compact Product Table**: Custom table layout with inline ➕ buttons for adding items
+- **Action Bar**: Shows basket count and sort order above the table
 - **Unified Comparison Table**: View all products in one table with comparison columns
-- **Add to Basket**: Select multiple products and add them to your basket with one click
+- **Add to Basket**: Inline ➕ buttons for immediate item addition with toast feedback
+- **Standardized Feedback**: Consistent error and empty states
+- **Safe Caching**: Search results cached for performance
 - **Form State Persistence**: Search filters persist when navigating between pages
 
 ### My Basket
-- **Dashboard Layout**: Two-column layout with basket table centered and side summaries
-- **Top Metrics Band**: Quick overview of items, total cost, retailers, healthy items count, and weekly budget usage
-  - **Weekly Budget Projection**: Shows percentage of typical weekly budget used based on household profile
-  - Budget hint displayed below metrics when household profile is set
+- **Dashboard Layout**: Modern dashboard with KPI metrics row and primary action bar
+- **KPI Metrics Row**: Items count, total cost, average per item, and savings at a glance
+- **Primary Action Bar**: 
+  - Health check button (navigates to Health Insights)
+  - Find savings button (triggers savings analysis)
+  - Export list button (with improved UX flow: spinner → toast → download buttons)
+- **Export List**: Premium export experience
+  - Click "Export list" → shows spinner → toast notification
+  - Download buttons appear immediately (.txt and .csv formats)
+  - CSV includes Quantity, Item, Price columns
 - **Shopping Cart Management**: 
   - View, manage, and remove items from your basket
   - Edit quantities directly in the table
   - Remove items via checkboxes or by setting quantity to 0
   - Update basket button to apply all changes at once
-- **Smart Suggestions** (new):
+- **Smart Suggestions**:
   - Automatically analyzes basket items to find cheaper or healthier alternatives
   - Shows up to 3 suggestions in the side column
   - Each suggestion displays:
@@ -375,75 +409,92 @@ The API will be available at http://127.0.0.1:8000
   - Apply a template to replace current basket contents
   - Delete templates you no longer need
   - Templates are session-based (tied to your browser session)
+- **Secondary Actions**: Weekly essentials and delivery services demo in collapsed expanders
 - **Session Persistence**: Basket persists across page navigations within the same browser session
-- **Cart Summary**: See total items, total price, and retailer breakdown
-- **Side Column**: Smart suggestions, retailer totals, savings finder, templates, health summary, and NLGA Plus info
+- **Cart Summary**: Compact summary card with key metrics and "Continue shopping" button
+- **Standardized Empty State**: Friendly empty basket card with action button
 
 ### Health Insights
-- **Basket Health Score (0-100)**: Color-coded health rating displayed at the top
-  - Excellent (80-100): 🟢 Green
-  - Good (60-79): 🟡 Yellow
-  - Needs improvement (40-59): 🟠 Orange
-  - Unhealthy (0-39): 🔴 Red
-  - Personalized tips based on score
-- **Two-Column Layout**: Charts and tables on left, summary and swaps on right
-- **Top Metrics Band**: Quick overview of healthy, neutral, and less healthy items
-- **Visual Breakdown**: 
-  - Bar chart showing health tag distribution
-  - **Donut chart** with percentage labels showing healthy/neutral/less healthy proportions
-  - **Basket health insights** panel with personalized recommendations based on proportions
-- **Health Tag Distribution**: Detailed breakdown of healthy vs. less healthy items
-- **Spending by Category**: See how much you're spending on healthy vs. unhealthy items
-- **Health-based Swap Suggestions**: 
-  - Automatically identifies items that could be swapped for healthier alternatives
-  - Shows health score improvement and price impact for each suggestion
-  - Displays top 5 suggestions sorted by health improvement
-  - Uses existing savings logic to find better alternatives
-- **AI Health Coach** (optional): Get AI-generated insights about your basket (requires `OPENAI_API_KEY`)
+- **Minimalist Dashboard**: Clean, modern dashboard design focused on key metrics
+- **Modern Header**: Header with basket quick access button
+- **KPI Metrics Row**: Health score, % healthy, Items to improve, Variety score
+- **Navigation CTAs**: "Open basket" and "Find savings" buttons
+- **Primary Visual**: Donut chart with percentage labels inside segments showing basket composition
+- **Key Takeaways Card**: 3 bullet points summarizing:
+  - Overall health assessment
+  - Main driver category
+  - One actionable improvement insight
+- **Top Categories Chart**: Stacked bar chart showing category-level health breakdown (conditional)
+- **Health-based Swap Suggestions**: Moved into "Improve this basket" expander (collapsed by default)
+- **Safe Caching**: Health aggregates computation cached (60-second TTL)
+- **Standardized Empty State**: Clean empty basket message with action button
+- **Compact Disclaimer**: One-line health insights disclaimer
 
-### Recipes & Ideas
-- **Meal Planning Hub**: Transform recipes into a weekly meal plan with integrated shopping and health tracking
-- **Modern 3-Column Grid Layout**: Beautiful image-based recipe cards in a 3-column grid (up to 9 recipes per view)
-- **Recipe Images**: Each recipe displays a curated image from the assets directory
-- **Category Chip Bar**: Quick filter buttons at the top (All, Quick, High protein, Vegetarian, Budget-friendly, Family, Healthy)
-  - Chips override the dropdown tag filter when selected
-  - Active chip shows visual indicator (● prefix)
-- **Recipe Cards**: Rich card display with:
-  - Recipe image at the top
-  - Title and description
-  - Meta information (meal type, difficulty, prep time) and tags
-  - **Estimated price** in euros (€X.XX format) displayed alongside planned badge in a commerce-style row
-  - **Health claim badges** (beige pills showing claims like "High protein", "200g+ vegetables")
-    - Limited to 3 claims per card for clean display
-    - Hover tooltips show full claim text
-  - Household-aware serving tips
-  - Expandable ingredients & instructions section
-  - "Plan this recipe" button for meal planning
-- **Planned Recipes Summary Panel**: Right-side panel showing your weekly meal plan
-  - Displays count and list of all planned recipes
-  - Shows recipe title, price, prep time, and meal type for each planned recipe
-  - Hints linking to **My Basket** (for assembling ingredients) and **Health Insights** (for analyzing grocery health)
-  - "Clear all planned recipes" button to reset your meal plan (session-scoped)
-- **Planned Badge**: Visual indicator (green badge) on recipes you've planned for the week
-  - Displayed in bottom row alongside price (commerce-style layout)
-  - Persists across page navigations within the same session
-  - Track which recipes you've already planned
-- **Filters & Search**: Left sidebar with:
-  - Text search input
-  - Meal type dropdown filter
-  - Dietary preference/tag dropdown filter
-  - All filters work together seamlessly
-- **Recipe Collection**: Browse healthy recipes organized by meal type and tags
-- **One-Click Ingredient Addition**: Add all recipe ingredients to basket with a single click
-- **Smart Product Selection**: Automatically selects the healthiest available product for each ingredient
+### Recipes
+- **Modern Recipe Grid**: Compact 3-column card grid (up to 9 recipes)
+- **Modern Header**: Header with basket quick access button
+- **Compact Recipe Cards**: Each card shows:
+  - Recipe title (bold)
+  - 1-line summary (description, truncated if > 100 chars)
+  - Tags as pills (limit 5 tags)
+  - "Add ingredients" button
+  - Expandable "View ingredients & steps" section
+- **Filters & Search**: Left sidebar with text search, meal type, and tag filters
+- **Category Chip Bar**: Quick filter buttons at the top
+- **Smart Product Selection**: Automatically finds healthiest products for recipe ingredients
   - Prioritizes products tagged as "healthy"
   - Falls back to cheapest option if health scores are tied
   - Best-effort matching: adds what can be found, reports missing ingredients
-- **Recipe Analytics**: 
-  - Tracks recipe views for analytics (logged when recipe details are expanded)
-  - Tracks recipe planning events (logged when "Plan this recipe" is clicked)
-  - All analytics events integrate with the Analytics Dashboard
-- **Household-Aware**: Serving suggestions based on your household profile (single, couple, family, student)
+- **Safe Caching**: Recipe filtering cached (5-minute TTL, includes filter params)
+- **Standardized Empty State**: Clean "No recipes found" message
+- **Short Caption + Expander**: Concise page description with "How recipes work" expander
+
+### Analytics Dashboard
+- **Summary Metrics Row**: Total events, searches, cart adds, swaps at a glance
+- **Event Counts Visualization**: Bar chart showing event types and counts
+  - Time window selection (6, 12, 24, 48, 72, or 168 hours)
+  - Sorted by count (most frequent events first)
+  - Table view for detailed counts
+- **Recent Events Table**: View most recent analytics events
+  - Event type filtering dropdown
+  - Limit selection (50, 100, 200, or 500 events)
+  - Displays timestamp, event type, session ID, and payload
+  - Improved payload formatting (readable, truncated to 200 chars)
+  - CSV download button for recent events
+- **Last Updated Timestamp**: Dynamic timestamp showing when page data was last refreshed
+- **Database Status**: Shows backend and database connection status
+  - Clear indication when database persistence is enabled or disabled
+  - Graceful degradation with informative messages
+- **Internal Use Only**: Clearly marked as demo/experimental feature
+
+### System Status
+- **Backend Health**: Monitor backend API status and connectivity via `/health` endpoint
+  - Shows real-time backend status (online/offline)
+  - Displays API metadata, version, and uptime information
+  - Gracefully handles connection errors and timeouts
+- **API Documentation**: Quick access to API documentation
+- **System Diagnostics**: View system details and planned diagnostic features
+- **Demo Controls** (new): Collapsible expander with demo utilities
+  - **Reset session**: Clears all search results, basket, swaps, export flags, and session state
+  - **Load demo basket**: Populates basket with 4 example items (milk, bread, eggs, fruit)
+  - **Clear cache**: Clears all Streamlit cache data
+  - All actions show toast feedback
+
+### UI/UX System
+- **Modular Architecture**: Reusable UI components (`ui/layout.py`, `ui/styles.py`, `ui/feedback.py`)
+- **Consistent Styling**: 
+  - Global CSS with Nunito font and tightened spacing
+  - Consistent button styling (padding, radius, font weight)
+  - Consistent card padding across all pages
+- **Standardized Feedback**: 
+  - `show_error()` for error messages with optional hints
+  - `show_empty_state()` for empty states with action buttons
+  - `working_spinner()` context manager for loading states
+- **Basket Quick Access**: Basket button in page headers (Search, Health Insights, Recipes)
+  - Shows item count when basket has items
+  - One-click navigation to basket page
+- **Responsive Design**: Optimized layouts that work well on different screen sizes
+- **No Decorative Images**: Clean, focused design without unnecessary images
 
 ### Analytics Dashboard
 - **Event Counts Visualization**: Bar chart showing event types and counts
@@ -805,6 +856,26 @@ Each retailer has a dedicated connector that:
 - **Rate Limiting**: No rate limiting implemented (be respectful of retailer APIs)
 - **Delivery Slots**: Only Picnic delivery slots are currently implemented
 - **Analytics**: Analytics dashboard is for internal/demo use only; not production-grade
+
+## Credits & Attributions
+
+### Images
+
+All hero images and recipe images used in this project are sourced from [Unsplash](https://unsplash.com/) and are provided under the [Unsplash License](https://unsplash.com/license), which allows free use for commercial and non-commercial purposes.
+
+The following photographers' work is featured in the `streamlit_app/assets/` directory:
+- [Anh Nguyen](https://unsplash.com/@pwign)
+- [Anna Pelzer](https://unsplash.com/@annapelzer)
+- [Brooke Lark](https://unsplash.com/@brookelark)
+- [Dan Gold](https://unsplash.com/@danielcgold)
+- [Davey Gravy](https://unsplash.com/@daveygravy)
+- [Ella Olsson](https://unsplash.com/@ellaolsson)
+- [Jannis Brandt](https://unsplash.com/@jannisbrandt)
+- [Nadine Primeau](https://unsplash.com/@nadineprimeau)
+- [Olena Bohovyk](https://unsplash.com/@olenkasanka)
+- [Taylor Kiser](https://unsplash.com/@taypaigey)
+
+We are grateful to these photographers and the Unsplash community for providing high-quality, freely usable images that enhance the visual appeal of this application.
 
 ## License
 

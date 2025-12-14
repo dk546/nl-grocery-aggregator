@@ -29,8 +29,8 @@ import api.config  # noqa: F401
 
 import streamlit as st
 
-from utils.api_client import get_health_status, get_cart_summary
-from utils.ui_components import render_backend_status, render_basket_summary_chip, render_db_status
+from utils.api_client import get_health_status, get_cart_summary, view_cart_backend
+from utils.ui_components import render_backend_status, render_db_status
 from utils.session import get_or_create_session_id
 from utils.profile import HOUSEHOLD_PROFILES, DEFAULT_PROFILE_KEY, get_profile_by_key
 from utils.preferences import (
@@ -41,7 +41,9 @@ from utils.preferences import (
     PREFERENCE_HEALTH_FIRST,
     PREFERENCE_BUDGET_FIRST,
 )
-from ui.style import inject_global_css, section_header, image_card, render_footer, get_random_asset_image
+from ui.styles import load_global_styles
+from ui.layout import page_header, section, card, kpi_row
+from ui.style import render_footer  # Keep footer function
 
 # Initialize session ID early for cart operations
 get_or_create_session_id()
@@ -59,34 +61,27 @@ st.set_page_config(
 )
 
 # Inject global CSS styling
-inject_global_css()
+load_global_styles()
 
 # Sidebar with app branding and global info
 with st.sidebar:
-    # App logo area
+    # App logo area - minimal
     st.markdown("### 🥕 **NL Grocery Aggregator**")
-    st.caption("Compare prices & eat healthier")
-    st.caption("Fresh, budget-friendly groceries for Dutch households.")
     
     st.divider()
     
-    # System status card
-    st.markdown('<div class="nlga-card nlga-card--sidebar">', unsafe_allow_html=True)
-    backend_status = get_health_status()
-    status_emoji = "🟢" if backend_status and backend_status.get("status") == "ok" else "🔴"
-    st.markdown(f"#### {status_emoji} System status")
-    st.caption("API health & supermarket connectors")
-    render_backend_status(backend_status)
-    
-    # Database status
-    db_enabled = False
-    if backend_status:
-        # Get db_enabled from health response
-        raw_status = backend_status.get("raw", {})
-        db_enabled = raw_status.get("db_enabled", False)
-    render_db_status(db_enabled)
-    
-    st.markdown('</div>', unsafe_allow_html=True)
+    # Compact basket mini-summary
+    session_id = get_or_create_session_id()
+    cart_summary = get_cart_summary(session_id)
+    if cart_summary:
+        st.markdown(f"**Basket:** {cart_summary.get('total_items', 0)} items")
+        st.markdown(f"**Total:** €{cart_summary.get('total_cost_eur', 0.0):.2f}")
+        if st.button("Open Basket", use_container_width=True, type="primary"):
+            st.switch_page("pages/03_🧺_My_Basket.py")
+    else:
+        st.caption("Basket is empty")
+        if st.button("Open Basket", use_container_width=True):
+            st.switch_page("pages/03_🧺_My_Basket.py")
     
     st.divider()
     
@@ -181,174 +176,84 @@ with st.sidebar:
     
     st.divider()
     
-    # Retailers card
-    st.markdown('<div class="nlga-card nlga-card--sidebar">', unsafe_allow_html=True)
-    st.markdown("#### Retailers")
-    st.caption("Currently supported supermarkets")
-    st.markdown("✅ Albert Heijn")
-    st.markdown("✅ Jumbo")
-    st.markdown("✅ Picnic")
-    st.markdown("✅ Dirk")
-    st.caption("We compare products; we don't sell or endorse any retailer.")
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    st.divider()
-    
-    # Resources & Plus card
-    st.markdown('<div class="nlga-card nlga-card--sidebar">', unsafe_allow_html=True)
-    st.markdown("#### 📚 Resources")
-    st.markdown("""
-- [API documentation](https://nl-grocery-aggregator.onrender.com/docs)
-- [GitHub repository](https://github.com/dk546/nl-grocery-aggregator)
-""")
-    st.markdown("---")
-    st.markdown("#### ✨ Coming soon: NLGA Plus")
-    st.caption("Save favorite baskets, track price history, and get smarter swap suggestions.")
-    st.markdown('</div>', unsafe_allow_html=True)
+    # System status - compact
+    with st.expander("System status", expanded=False):
+        backend_status = get_health_status()
+        status_emoji = "🟢" if backend_status and backend_status.get("status") == "ok" else "🔴"
+        st.markdown(f"**Backend:** {status_emoji}")
+        render_backend_status(backend_status)
+        
+        # Database status
+        db_enabled = False
+        if backend_status:
+            raw_status = backend_status.get("raw", {})
+            db_enabled = raw_status.get("db_enabled", False)
+        render_db_status(db_enabled)
 
 # Main content area - Home Page
 # For multi-page apps, Streamlit automatically shows the selected page content
 # When no specific page is selected, show the home page content here
 
-# 3-column hero: text, CTAs, image-only column
-col_text, col_cta, col_image = st.columns([2.1, 1.7, 1.2], gap="large")
-
-with col_text:
-    st.markdown("## Healthy, fresh groceries – at the best price")
-    st.markdown(
-        "Compare Albert Heijn, Jumbo, Picnic, and Dirk in one place. "
-        "Build a basket that fits your household and your budget."
-    )
-    st.caption("One place to plan a fresh, budget-friendly weekly shop for your household.")
-
-with col_cta:
-    # Primary navigation buttons
-    st.markdown("#### Get started")
-    btn_row1, btn_row2 = st.columns([1, 1], gap="small")
-    with btn_row1:
-        try:
-            st.page_link(
-                "pages/02_🛒_Search_and_Compare.py",
-                label="🔍 Search & Compare",
-                icon="🔍",
-            )
-        except (AttributeError, TypeError):
-            st.info("Use the sidebar to open **Search & Compare**.")
-    with btn_row2:
-        try:
-            st.page_link(
-                "pages/03_🧺_My_Basket.py",
-                label="🧺 My Basket",
-                icon="🧺",
-            )
-        except (AttributeError, TypeError):
-            st.info("Use the sidebar to open **My Basket**.")
-    
-    st.markdown("#### Why people use this")
-    c1, c2, c3 = st.columns(3, gap="small")
-    with c1:
-        st.caption("🥦 **Fresh & balanced**")
-    with c2:
-        st.caption("💶 **Smart on budget**")
-    with c3:
-        st.caption("⏱️ **Less hassle**")
-
-with col_image:
-    # Dedicated image column: one or two small stacked images
-    primary_image = get_random_asset_image("home_hero_side")
-    secondary_image = get_random_asset_image("home_hero_side_2")
-    
-    if primary_image:
-        st.markdown('<div class="nlga-hero-side-image">', unsafe_allow_html=True)
-        st.image(primary_image, use_container_width=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-    
-    if secondary_image and secondary_image != primary_image:
-        st.markdown('<div class="nlga-hero-side-image nlga-hero-side-image--secondary">', unsafe_allow_html=True)
-        st.image(secondary_image, use_container_width=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-
-# Show basket summary chip if user has items in basket
-session_id = get_or_create_session_id()
-cart_summary = get_cart_summary(session_id)
-if cart_summary:
-    render_basket_summary_chip(cart_summary)
-
-st.divider()
-
-# "How it works" section
-section_header(
-    title="How it works",
-    eyebrow="3 SIMPLE STEPS",
-    help_text="Getting started is easy – just follow these steps to save money and eat healthier."
+# Page header - minimal
+page_header(
+    "NL Grocery Aggregator",
+    subtitle="Compare prices across Albert Heijn, Jumbo, Picnic, and Dirk."
 )
 
-col1, col2, col3 = st.columns(3)
+# Get cart data for KPIs
+session_id = get_or_create_session_id()
+cart_data = view_cart_backend(session_id)  # Returns None on error, {} or {items: []} if empty
 
-with col1:
-    with st.container():
-        st.markdown('<div class="nlga-card">', unsafe_allow_html=True)
-        st.markdown("### 1️⃣ Pick your household & retailers")
-        st.markdown("""
-Choose your household profile in the sidebar (single, couple, family, or student).
-We'll scale servings and weekly budgets, then search Albert Heijn, Jumbo, Picnic, and Dirk for you.
-""")
-        st.markdown('</div>', unsafe_allow_html=True)
+# Calculate KPI values safely
+if cart_data and cart_data.get("items"):
+    basket_items_count = len(cart_data["items"])
+    basket_total = cart_data.get("total_price", 0.0)
+    retailers_count = len(set(item.get("retailer", "") for item in cart_data["items"]))
+else:
+    basket_items_count = 0
+    basket_total = 0.0
+    retailers_count = 0
 
-with col2:
-    with st.container():
-        st.markdown('<div class="nlga-card">', unsafe_allow_html=True)
-        st.markdown("### 2️⃣ Search, compare & add items")
-        st.markdown("""
-Search for any product and instantly see prices across all retailers.
-Filter, sort by unit price, and add the best options straight to your basket.
-""")
-        st.markdown('</div>', unsafe_allow_html=True)
+backend_status = get_health_status()
+mode_text = "Live" if backend_status and backend_status.get("status") == "ok" else "Offline"
 
-with col3:
-    with st.container():
-        st.markdown('<div class="nlga-card">', unsafe_allow_html=True)
-        st.markdown("### 3️⃣ Check your savings & health insights")
-        st.markdown("""
-Open your basket to see totals per retailer, potential savings, and simple health tags.
-Use this as a gentle guide – not medical advice – when planning weekly meals.
-""")
-        st.markdown('</div>', unsafe_allow_html=True)
+# KPI row
+kpi_row([
+    {"label": "Basket items", "value": basket_items_count if basket_items_count > 0 else "—", "icon": "🧺"},
+    {"label": "Basket total", "value": f"€{basket_total:.2f}" if basket_total > 0 else "—", "icon": "💶"},
+    {"label": "Retailers", "value": retailers_count if retailers_count > 0 else "—", "icon": "🏪"},
+    {"label": "Mode", "value": mode_text, "icon": "⚡"},
+])
 
-# "Why this matters" / value props with side image
-layout_main, layout_side = st.columns([2.2, 1], gap="large")
+st.markdown("<br>", unsafe_allow_html=True)
 
-with layout_main:
-    section_header(
-        title="Why this matters",
-        help_text="Small changes that add up to big benefits."
-    )
-    
-    st.markdown("""
-    - **💰 Save money** – Compare prices across Albert Heijn, Jumbo, Dirk, and Picnic and spot cheaper swaps before you check out.
+# Prominent CTA buttons
+st.markdown("#### Get started")
+cta_col1, cta_col2, cta_col3 = st.columns(3, gap="medium")
 
-    - **🥗 Eat a bit healthier** – Products are tagged as healthy, neutral, or less healthy based on simple rules. It's not perfect, but it nudges you toward more balanced baskets.
+with cta_col1:
+    if st.button("Start Search", use_container_width=True, type="primary"):
+        st.switch_page("pages/02_🛒_Search_and_Compare.py")
 
-    - **📅 Plan weekly shops more easily** – Reuse favorite baskets as templates, explore recipes, and adjust everything automatically to your household size.
-    """)
+with cta_col2:
+    if st.button("Open Basket", use_container_width=True):
+        st.switch_page("pages/03_🧺_My_Basket.py")
 
-with layout_side:
-    image_card("home_side", caption="Every week, build a fresh, balanced basket.")
-    st.markdown('<div class="nlga-card nlga-card--sidebar">', unsafe_allow_html=True)
-    st.markdown("#### This week at a glance")
-    st.caption("Compare prices, plan your basket, and check simple health insights.")
-    st.markdown("---")
-    st.markdown("**✨ NLGA Plus (coming soon)**")
-    st.caption("Price history, smart swaps, and personalized recipe ideas.")
-    st.markdown('</div>', unsafe_allow_html=True)
+with cta_col3:
+    if st.button("Health Insights", use_container_width=True):
+        st.switch_page("pages/04_📊_Health_Insights.py")
 
 st.divider()
 
-# Footer note
-st.caption("""
-⚠️ **Important**: This app is experimental. Health tags are approximate and for information only.
-Always double-check product information on the retailer's website before buying.
-""")
+# How it works - in expander to keep page minimal
+with st.expander("How it works", expanded=False):
+    st.markdown("""
+    1. **Search & Compare** – Search for products across all retailers and compare prices instantly.
+    2. **Build Your Basket** – Add items and see totals per retailer, potential savings, and health tags.
+    3. **Get Insights** – Review your basket's health breakdown and explore healthier alternatives.
+    """)
+
+st.markdown("<br>", unsafe_allow_html=True)
 
 # Footer
 render_footer()

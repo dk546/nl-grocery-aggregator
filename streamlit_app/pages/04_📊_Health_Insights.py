@@ -31,13 +31,27 @@ from utils.preferences import (
     PREFERENCE_HEALTH_FIRST,
     PREFERENCE_BUDGET_FIRST,
 )
-from ui.style import inject_global_css, section_header, pill_tag, image_card, render_footer
+from ui.styles import load_global_styles
+from ui.layout import page_header, section, card, kpi_row
+from ui.style import render_footer
+from ui.feedback import show_empty_state
+from ui.feedback import show_empty_state  # Keep footer function
+from ui.style import pill_tag  # Keep pill_tag helper
 
 # Inject global CSS styling
-inject_global_css()
+load_global_styles()
 
 # Get session ID (shared across pages)
 session_id = get_or_create_session_id()
+
+# Prepare basket button function for header
+from ui.layout import get_basket_count
+
+def _render_basket_button():
+    basket_count = get_basket_count(session_id)
+    basket_label = f"🧺 Basket ({basket_count})" if basket_count > 0 else "🧺 Basket"
+    if st.button(basket_label, key="header_basket_btn_health", use_container_width=True):
+        st.switch_page("pages/03_🧺_My_Basket.py")
 
 # Fetch basket from backend using shared session
 try:
@@ -49,340 +63,267 @@ except Exception as e:
 
 # Guard for "no basket / no health data"
 if not basket_items:
-    section_header(
+    page_header(
         title="Health insights",
-        eyebrow="GENTLE NUTRITION NUDGES",
-        help_text="Add some items to your basket first to see a simple health breakdown."
+        subtitle="Add some items to your basket first to see a simple health breakdown.",
+        right=_render_basket_button
     )
-    st.info(
-        "Once you've added items to your basket, we'll show how many are healthier, "
-        "neutral or less healthy, plus a few gentle swap suggestions."
+    show_empty_state(
+        title="Your basket is empty",
+        subtitle="Add items to your basket to see health insights and improvement suggestions.",
+        action_label="Open basket",
+        action_page_path="pages/03_🧺_My_Basket.py"
     )
     st.stop()
 
-# Convert basket items to DataFrame for analysis
-df = pd.DataFrame(basket_items)
+# Cache health aggregates computation
+@st.cache_data(ttl=60)  # Cache for 60 seconds
+def compute_health_aggregates(basket_items_list: list, total_price: float) -> dict:
+    """Compute health aggregates from basket items."""
+    df_temp = pd.DataFrame(basket_items_list)
+    if "health_tag" not in df_temp.columns:
+        df_temp["health_tag"] = None
+    df_temp["health_tag"] = df_temp["health_tag"].fillna("unknown")
+    
+    total_items = int(df_temp["quantity"].sum()) if "quantity" in df_temp.columns else len(df_temp)
+    
+    healthy_count = len(df_temp[df_temp["health_tag"] == "healthy"])
+    unhealthy_count = len(df_temp[df_temp["health_tag"] == "unhealthy"])
+    neutral_count = len(df_temp[df_temp["health_tag"] == "neutral"])
+    unknown_count = len(df_temp[df_temp["health_tag"] == "unknown"])
+    
+    # Calculate Basket Health Score (0-100)
+    score_raw = (
+        healthy_count * 20 +
+        neutral_count * 5 -
+        unhealthy_count * 15
+    )
+    score = max(0, min(100, int(score_raw)))
+    
+    healthy_pct_all = (healthy_count / len(df_temp) * 100) if len(df_temp) > 0 else 0
+    known_health_items = len(df_temp) - unknown_count
+    healthy_pct_known = (healthy_count / known_health_items * 100) if known_health_items > 0 else 0
+    
+    return {
+        "total_items": total_items,
+        "total_spend": total_price,
+        "healthy_count": healthy_count,
+        "unhealthy_count": unhealthy_count,
+        "neutral_count": neutral_count,
+        "unknown_count": unknown_count,
+        "score": score,
+        "healthy_pct_all": healthy_pct_all,
+        "healthy_pct_known": healthy_pct_known,
+        "df": df_temp
+    }
 
-# Ensure health_tag column exists (fill missing with "unknown")
-if "health_tag" not in df.columns:
-    df["health_tag"] = None
-df["health_tag"] = df["health_tag"].fillna("unknown")
+# Calculate health aggregates (cached)
+health_data = compute_health_aggregates(basket_items, float(cart_data.get("total_price", 0.0)) if cart_data else 0.0)
+df = health_data["df"]
+total_items = health_data["total_items"]
+total_spend = health_data["total_spend"]
+healthy_count = health_data["healthy_count"]
+unhealthy_count = health_data["unhealthy_count"]
+neutral_count = health_data["neutral_count"]
+unknown_count = health_data["unknown_count"]
+score = health_data["score"]
+healthy_pct_all = health_data["healthy_pct_all"]
+healthy_pct_known = health_data["healthy_pct_known"]
 
-# Calculate total metrics
-total_items = int(df["quantity"].sum()) if "quantity" in df.columns else len(df)
-total_spend = float(cart_data.get("total_price", 0.0)) if cart_data else 0.0
-
-# Health tag counts
-healthy_count = len(df[df["health_tag"] == "healthy"])
-unhealthy_count = len(df[df["health_tag"] == "unhealthy"])
-neutral_count = len(df[df["health_tag"] == "neutral"])
-unknown_count = len(df[df["health_tag"] == "unknown"])
-
-# Calculate Basket Health Score (0-100)
-# Note: "less healthy" is the unhealthy_count in the scoring model
-score_raw = (
-    healthy_count * 20 +
-    neutral_count * 5 -
-    unhealthy_count * 15
+# Page header with basket button
+page_header(
+    title="Health Insights",
+    subtitle="Quick overview of your basket's health balance and improvement opportunities.",
+    right=_render_basket_button
 )
-# Normalize to 0-100 range
-score = max(0, min(100, int(score_raw)))
 
-# Calculate health percentages
-# healthy_pct_all: percentage of all items that are healthy (including unknown in denominator)
-healthy_pct_all = (healthy_count / len(df) * 100) if len(df) > 0 else 0
-# healthy_pct_known: percentage of items with known health tags that are healthy (excluding unknown from denominator)
-known_health_items = len(df) - unknown_count
-healthy_pct_known = (healthy_count / known_health_items * 100) if known_health_items > 0 else 0
-
-# Page header + household caption
-section_header(
-    title="Health insights for your basket",
-    eyebrow="GENTLE NUTRITION NUDGES",
-    help_text="A simple, visual breakdown of healthier, neutral and less healthy items."
-)
-
-# Basket Health Score display
-st.subheader("Basket Health Score")
-
+# Calculate health score category
 if score >= 80:
-    color = "🟢"
-    label = "Excellent"
+    score_category = "Excellent"
 elif score >= 60:
-    color = "🟡"
-    label = "Good"
+    score_category = "Good"
 elif score >= 40:
-    color = "🟠"
-    label = "Needs improvement"
+    score_category = "Needs improvement"
 else:
-    color = "🔴"
-    label = "Unhealthy"
+    score_category = "Unhealthy"
 
-st.markdown(f"### {color} {score}/100 — **{label}**")
+# Calculate items to improve (unhealthy items)
+items_to_improve = unhealthy_count
 
-# Optional tip based on score
-if score < 60:
-    st.info("Try swapping a few neutral items for healthier ones to improve your score.")
-elif score == 100:
-    st.success("Perfect score! Your basket is very healthy.")
+# Calculate variety score (number of unique categories, if available)
+variety_score = "—"
+if "category" in df.columns:
+    unique_categories = df["category"].nunique()
+    variety_score = f"{unique_categories} categories"
+
+# KPI row
+kpi_row([
+    {"label": "Health score", "value": f"{score}/100", "icon": "📊"},
+    {"label": "% healthy", "value": f"{healthy_pct_all:.0f}%", "icon": "🥦"},
+    {"label": "Items to improve", "value": items_to_improve, "icon": "⚠️"},
+    {"label": "Variety", "value": variety_score, "icon": "📦"},
+])
+
+st.markdown("<br>", unsafe_allow_html=True)
+
+# Navigation CTAs
+nav_col1, nav_col2 = st.columns(2, gap="medium")
+with nav_col1:
+    if st.button("Open basket", use_container_width=True, type="secondary"):
+        st.switch_page("pages/03_🧺_My_Basket.py")
+with nav_col2:
+    if st.button("Find savings", use_container_width=True):
+        st.switch_page("pages/03_🧺_My_Basket.py")
 
 st.divider()
 
-profile_key = st.session_state.get("household_profile_key")
-profile = HOUSEHOLD_PROFILES.get(profile_key) if profile_key else None
-if profile:
-    st.caption(
-        f"For your **{profile.label.lower()}** household, use this as a rough guide when planning meals."
-    )
-
-# Get user preferences for personalized messaging
-prefs = get_user_preferences_from_session()
-
-# Preference-aware narrative box
-with st.container():
-    if prefs.health_focus == PREFERENCE_HEALTH_FIRST:
-        st.info(
-            "You've told us you care most about **healthier choices**. "
-            "Use this page to reduce the number of less healthy items in your basket and increase healthy ones over time."
-        )
-    elif prefs.health_focus == PREFERENCE_BUDGET_FIRST:
-        st.info(
-            "You've told us you care most about **staying on budget**. "
-            "We'll still highlight health patterns, but focus on small, realistic improvements rather than strict rules."
-        )
+# Main content - simplified layout
+# Primary chart: Donut chart for basket composition
+with card("Basket composition"):
+    # Create DataFrame for donut chart (exclude "unknown" and zero counts)
+    donut_data = [
+        {"segment": "🥦 Healthy", "count": healthy_count},
+        {"segment": "⚪ Neutral", "count": neutral_count},
+        {"segment": "⚠️ Less Healthy", "count": unhealthy_count},
+    ]
+    df_donut = pd.DataFrame(donut_data)
+    df_donut = df_donut[df_donut["count"] > 0]
+    
+    if df_donut.empty:
+        st.info("No items in basket yet. Add items to see health breakdown.")
     else:
-        st.info(
-            "You've chosen a **balanced focus** between health and price. "
-            "Try swapping a few less healthy items for healthier alternatives without increasing your total spend too much."
+        # Calculate percentages
+        total_count = df_donut["count"].sum()
+        if total_count > 0:
+            df_donut["percent"] = df_donut["count"] / total_count
+        else:
+            df_donut["percent"] = 0.0
+        
+        # Create donut chart with Altair
+        chart = (
+            alt.Chart(df_donut)
+            .mark_arc(innerRadius=60)  # donut effect
+            .encode(
+                theta=alt.Theta("count:Q", stack=True),
+                color=alt.Color(
+                    "segment:N",
+                    scale=alt.Scale(
+                        domain=["🥦 Healthy", "⚪ Neutral", "⚠️ Less Healthy"],
+                        range=["#22c55e", "#94a3b8", "#ef4444"]  # green, gray, red
+                    ),
+                    legend=alt.Legend(title=None, orient="right")
+                ),
+                tooltip=[
+                    "segment:N",
+                    "count:Q",
+                    alt.Tooltip("percent:Q", format=".0%", title="Share"),
+                ],
+            )
+            .properties(
+                width=400,
+                height=400
+            )
         )
+        
+        # Add percentage labels text layer
+        text = (
+            alt.Chart(df_donut)
+            .mark_text(radius=110, size=14, align="center", baseline="middle")
+            .encode(
+                theta=alt.Theta("count:Q", stack=True),
+                text=alt.Text("percent:Q", format=".0%"),
+                color=alt.value("white"),  # ensures contrast on colored slices
+            )
+        )
+        
+        # Combine chart and text
+        donut_chart = chart + text
+        st.altair_chart(donut_chart, use_container_width=True)
 
-# Show dietary preferences if set
-if prefs.dietary_tags:
-    st.caption(
-        "Dietary preferences noted: "
-        + ", ".join(prefs.dietary_tags)
-        + ". We'll gradually use this to refine suggestions and recipes."
-    )
+st.markdown("<br>", unsafe_allow_html=True)
 
-# Metrics band (top row)
-metrics_cols = st.columns(3, gap="large")
-with metrics_cols[0]:
-    st.metric("Healthy items", healthy_count)
-with metrics_cols[1]:
-    st.metric("Neutral items", neutral_count)
-with metrics_cols[2]:
-    st.metric("Less healthy", unhealthy_count)
+# Key Takeaways card
+with card("Key takeaways"):
+    # Calculate shares for insights
+    total_count = df_donut["count"].sum() if not df_donut.empty else 0
+    healthy_share = float(
+        df_donut.loc[df_donut["segment"] == "🥦 Healthy", "percent"].sum()
+    ) if not df_donut.empty and "🥦 Healthy" in df_donut["segment"].values else 0.0
+    
+    less_healthy_share = float(
+        df_donut.loc[df_donut["segment"] == "⚠️ Less Healthy", "percent"].sum()
+    ) if not df_donut.empty and "⚠️ Less Healthy" in df_donut["segment"].values else 0.0
+    
+    # Find main driver category
+    if "category" in df.columns:
+        category_counts = df["health_tag"].value_counts()
+        main_category = category_counts.index[0] if len(category_counts) > 0 else "mixed"
+    else:
+        main_category = "mixed"
+    
+    # Generate 3 key takeaways
+    takeaway1 = f"Your basket is **{score_category.lower()}** ({score}/100)."
+    if healthy_share >= 0.5:
+        takeaway2 = "Most items are healthy. Keep up the good choices."
+    elif less_healthy_share >= 0.4:
+        takeaway2 = f"**{int(less_healthy_share * 100)}%** of items are less healthy. Focus on swaps."
+    else:
+        takeaway2 = "Mix is balanced. Small swaps can improve your score."
+    
+    # Actionable insight
+    if unhealthy_count > 0:
+        takeaway3 = f"**{unhealthy_count} item(s)** could be swapped for healthier alternatives."
+    elif healthy_share < 0.5:
+        takeaway3 = "Add more vegetables, whole grains, or lean proteins."
+    else:
+        takeaway3 = "Your basket looks great! Maintain this balance."
+    
+    st.markdown(f"• {takeaway1}")
+    st.markdown(f"• {takeaway2}")
+    st.markdown(f"• {takeaway3}")
+
+st.markdown("<br>", unsafe_allow_html=True)
+
+# Secondary chart: Category breakdown (if categories available)
+if "category" in df.columns and len(df["category"].dropna()) > 0:
+    with card("Top categories"):
+        # Group by category and health tag
+        category_health = df.groupby(["category", "health_tag"]).size().reset_index(name="count")
+        category_health = category_health[category_health["health_tag"] != "unknown"]
+        
+        if not category_health.empty:
+            # Get top 5 categories by total count
+            top_categories = df["category"].value_counts().head(5).index.tolist()
+            category_health = category_health[category_health["category"].isin(top_categories)]
+            
+            # Create stacked bar chart
+            chart = (
+                alt.Chart(category_health)
+                .mark_bar()
+                .encode(
+                    x=alt.X("category:N", title="Category", sort="-y"),
+                    y=alt.Y("count:Q", title="Items"),
+                    color=alt.Color(
+                        "health_tag:N",
+                        scale=alt.Scale(
+                            domain=["healthy", "neutral", "unhealthy"],
+                            range=["#22c55e", "#94a3b8", "#ef4444"]
+                        ),
+                        legend=alt.Legend(title=None)
+                    ),
+                    tooltip=["category:N", "health_tag:N", "count:Q"]
+                )
+                .properties(height=300)
+            )
+            st.altair_chart(chart, use_container_width=True)
+        else:
+            st.caption("No category data available.")
 
 st.divider()
 
-# Main content with side column
-main_col, side_col = st.columns([2.2, 1], gap="large")
-
-with main_col:
-    section_header(
-        title="Basket health breakdown",
-        eyebrow="OVERVIEW",
-        help_text="How your current basket splits into healthier, neutral, and less healthy items."
-    )
-    
-    # Charts: Bar chart and donut chart side by side
-    col_bar, col_donut = st.columns(2)
-    
-    with col_bar:
-        # Bar chart card
-        st.markdown('<div class="nlga-card">', unsafe_allow_html=True)
-        
-        # Create health breakdown DataFrame for bar chart
-        tag_counts = df["health_tag"].value_counts()
-        health_chart_data = pd.DataFrame({
-            "Category": tag_counts.index,
-            "Count": tag_counts.values
-        })
-        
-        # Map health tags to friendly names for display
-        health_chart_data["Category"] = health_chart_data["Category"].map({
-            "healthy": "🥦 Healthy",
-            "unhealthy": "⚠️ Less Healthy",
-            "neutral": "⚪ Neutral",
-            "unknown": "❔ Unknown"
-        }).fillna(health_chart_data["Category"])
-        
-        st.bar_chart(health_chart_data.set_index("Category"), width='stretch')
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    with col_donut:
-        # Donut chart card
-        st.markdown('<div class="nlga-card">', unsafe_allow_html=True)
-        
-        # Create DataFrame for donut chart (exclude "unknown" and zero counts)
-        donut_data = [
-            {"segment": "🥦 Healthy", "count": healthy_count},
-            {"segment": "⚪ Neutral", "count": neutral_count},
-            {"segment": "⚠️ Less Healthy", "count": unhealthy_count},
-        ]
-        df_donut = pd.DataFrame(donut_data)
-        df_donut = df_donut[df_donut["count"] > 0]
-        
-        if df_donut.empty:
-            st.info("No items in basket yet. Add items to see health breakdown.")
-        else:
-            # Calculate percentages
-            total_count = df_donut["count"].sum()
-            if total_count > 0:
-                df_donut["percent"] = df_donut["count"] / total_count
-            else:
-                df_donut["percent"] = 0.0
-            
-            # Create donut chart with Altair
-            chart = (
-                alt.Chart(df_donut)
-                .mark_arc(innerRadius=60)  # donut effect
-                .encode(
-                    theta=alt.Theta("count:Q", stack=True),
-                    color=alt.Color(
-                        "segment:N",
-                        scale=alt.Scale(
-                            domain=["🥦 Healthy", "⚪ Neutral", "⚠️ Less Healthy"],
-                            range=["#22c55e", "#94a3b8", "#ef4444"]  # green, gray, red
-                        ),
-                        legend=alt.Legend(title="Category", orient="right")
-                    ),
-                    tooltip=[
-                        "segment:N",
-                        "count:Q",
-                        alt.Tooltip("percent:Q", format=".0%", title="Share"),
-                    ],
-                )
-                .properties(
-                    width=400,
-                    height=400
-                )
-            )
-            
-            # Add percentage labels text layer
-            text = (
-                alt.Chart(df_donut)
-                .mark_text(radius=110, size=14, align="center", baseline="middle")
-                .encode(
-                    theta=alt.Theta("count:Q", stack=True),
-                    text=alt.Text("percent:Q", format=".0%"),
-                    color=alt.value("white"),  # ensures contrast on colored slices
-                )
-            )
-            
-            # Combine chart and text
-            donut_chart = chart + text
-            st.altair_chart(donut_chart, use_container_width=True)
-            
-            # Basket health insights panel
-            st.markdown("### Basket health insights")
-            
-            # Calculate shares for insights
-            healthy_share = float(
-                df_donut.loc[df_donut["segment"] == "🥦 Healthy", "percent"].sum()
-            ) if not df_donut.empty and "🥦 Healthy" in df_donut["segment"].values else 0.0
-            
-            neutral_share = float(
-                df_donut.loc[df_donut["segment"] == "⚪ Neutral", "percent"].sum()
-            ) if not df_donut.empty and "⚪ Neutral" in df_donut["segment"].values else 0.0
-            
-            less_healthy_share = float(
-                df_donut.loc[df_donut["segment"] == "⚠️ Less Healthy", "percent"].sum()
-            ) if not df_donut.empty and "⚠️ Less Healthy" in df_donut["segment"].values else 0.0
-            
-            # Generate insights based on proportions
-            if total_count == 0:
-                st.info("Add items to your basket to see personalized health insights.")
-            elif healthy_share >= 0.7:
-                st.success(
-                    "Your basket is **mostly healthy** 🌱. Great job! "
-                    "You could maintain this by keeping an eye on treats and ultra-processed items."
-                )
-            elif less_healthy_share >= 0.4:
-                st.warning(
-                    "A big share of your basket is **less healthy** ⚠️. "
-                    "Try swapping a few items for healthier alternatives to improve your overall score."
-                )
-            elif neutral_share >= 0.5 and healthy_share < 0.4:
-                st.info(
-                    "Your basket is **quite neutral**. You're not doing badly, but there's room to add "
-                    "more vegetables, whole grains, or lean proteins for a healthier mix."
-                )
-            else:
-                st.info(
-                    "Your basket is fairly **balanced**. A couple of targeted swaps could make it even healthier."
-                )
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Items by health tag – optional detailed view
-    st.markdown("### Items by health tag")
-    st.caption("Use this to spot quick wins for swaps and rebalancing your basket.")
-    
-    # Detailed breakdown in expander to reduce scrolling
-    with st.expander("Show detailed item list"):
-        st.markdown('<div class="nlga-card">', unsafe_allow_html=True)
-        
-        # Create a readable item list with health tags
-        if len(df) > 0:
-            # Display items grouped by health tag
-            for health_tag in ["healthy", "neutral", "unhealthy", "unknown"]:
-                tag_items = df[df["health_tag"] == health_tag]
-                if len(tag_items) > 0:
-                    tag_display = {
-                        "healthy": "🥦 Healthy",
-                        "unhealthy": "⚠️ Less Healthy",
-                        "neutral": "⚪ Neutral",
-                        "unknown": "❔ Unknown"
-                    }.get(health_tag, health_tag.capitalize())
-                    
-                    st.markdown(f"#### {tag_display}")
-                    
-                    for idx, row in tag_items.iterrows():
-                        item_name = row.get("name", "Unknown")
-                        quantity = row.get("quantity", 1)
-                        health_tag_value = row.get("health_tag", "unknown")
-                        
-                        col_name, col_tag = st.columns([3, 1])
-                        with col_name:
-                            st.markdown(f"- {item_name} (Qty: {quantity})")
-                        with col_tag:
-                            if health_tag_value and health_tag_value != "unknown":
-                                st.markdown(pill_tag(health_tag_value.capitalize()), unsafe_allow_html=True)
-                    
-                    st.markdown("---")
-            
-            # Also show aggregate summary table
-            if "line_total" in df.columns:
-                df["line_total"] = pd.to_numeric(df["line_total"], errors="coerce").fillna(0)
-                health_summary = df.groupby("health_tag").agg({
-                    "quantity": "sum",
-                    "line_total": ["sum", "mean"]
-                }).round(2)
-                health_summary.columns = ["Total Quantity", "Total Spend (€)", "Avg. Item Price (€)"]
-            else:
-                health_summary = df.groupby("health_tag")["quantity"].sum().to_frame("Total Quantity") if "quantity" in df.columns else df.groupby("health_tag").size().to_frame("Count")
-            
-            # Rename index for better display
-            health_summary.index = health_summary.index.map({
-                "healthy": "🥦 Healthy",
-                "unhealthy": "⚠️ Less Healthy",
-                "neutral": "⚪ Neutral",
-                "unknown": "❔ Unknown"
-            })
-            
-            st.markdown("#### Summary Table")
-            st.dataframe(health_summary, use_container_width=True)
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Health-based swap suggestions section
-    st.divider()
-    st.subheader("Health-based swap suggestions")
-    st.caption(
-        "Quick ideas for improving your basket health score by swapping some items for healthier alternatives."
-    )
+# Actionable suggestions in expander
+with st.expander("Improve this basket", expanded=False):
+    # Health-based swap suggestions
     
     # Calculate health-based swap suggestions
     health_swap_suggestions = []
@@ -514,63 +455,8 @@ with main_col:
             st.markdown('</div>', unsafe_allow_html=True)
             st.markdown("")  # Add spacing between suggestions
 
-with side_col:
-    # Small image card
-    image_card(
-        "health_side",
-        caption="Healthy, neutral, and less healthy items at a glance."
-    )
-    
-    # Quick summary card
-    section_header(
-        title="Quick summary",
-        eyebrow="SNAPSHOT",
-        help_text="High-level view of your basket's balance."
-    )
-    st.markdown('<div class="nlga-card nlga-card--sidebar">', unsafe_allow_html=True)
-    st.caption(f"Healthy items: {healthy_count}")
-    st.caption(f"Neutral items: {neutral_count}")
-    st.caption(f"Less healthy: {unhealthy_count}")
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Small swaps card – reuse existing suggestions logic
-    if unhealthy_count > 0:
-        unhealthy_items_df = df[df["health_tag"] == "unhealthy"].head(5)
-        
-        section_header(
-            title="Small swaps, big impact",
-            eyebrow="SUGGESTED CHANGES",
-            help_text="Items where a slightly healthier alternative is available."
-        )
-        
-        for idx, row in unhealthy_items_df.iterrows():
-            item_name = row.get("name", "Unknown")
-            retailer = row.get("retailer", "Unknown")
-            retailer_display = retailer.title() if retailer else "Unknown"
-            
-            st.markdown('<div class="nlga-card nlga-card--sidebar">', unsafe_allow_html=True)
-            st.markdown(f"**{item_name}** → explore alternatives")
-            st.caption(f"From {retailer_display}. Consider healthier swaps in Search & Compare.")
-            st.markdown('</div>', unsafe_allow_html=True)
-        
-        if unhealthy_count > 5:
-            st.caption(f"... and {unhealthy_count - 5} more item(s) could be explored for alternatives.")
-    
-    # Plus teaser
-    st.markdown("---")
-    st.markdown('<div class="nlga-card nlga-card--sidebar">', unsafe_allow_html=True)
-    st.markdown("#### ✨ NLGA Plus (concept)")
-    st.caption(
-        "Imagine seeing weekly trends, deeper nutrition scores, and meal ideas based on what you usually buy. "
-        "That's where NLGA Plus could go."
-    )
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# Disclaimer at the bottom
-st.caption("""
-⚠️ These health insights are approximate and based on simple tagging rules.
-They are not nutritional or medical advice. Always consider your own dietary needs.
-""")
+# Compact disclaimer
+st.caption("⚠️ Health insights are approximate and for information only. Not medical advice.")
 
 # Footer
 render_footer()

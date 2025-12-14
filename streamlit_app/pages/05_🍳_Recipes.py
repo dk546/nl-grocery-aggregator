@@ -29,14 +29,11 @@ from utils.session import get_or_create_session_id
 from utils.api_client import search_products, add_to_cart_backend
 from utils.profile import get_profile_by_key, HOUSEHOLD_PROFILES
 from streamlit_app.utils.recipes_data import Recipe
-from ui.style import (
-    inject_global_css,
-    section_header,
-    pill_tag,
-    image_card,
-    get_random_asset_image,
-    render_footer,
-)
+from ui.styles import load_global_styles
+from ui.layout import page_header, section, card
+from ui.style import render_footer  # Keep footer function
+from ui.style import pill_tag  # Keep pill_tag helper
+from ui.feedback import show_empty_state, working_spinner
 
 # Assets directory for recipe images
 ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
@@ -171,7 +168,7 @@ def handle_add_recipe_to_basket(recipe: recipes_data.Recipe, session_id: str) ->
     missing: List[str] = []
     chosen_products: List[Dict[str, Any]] = []
     
-    with st.spinner("🔍 Finding the best ingredients for your basket..."):
+    with working_spinner("Working…"):
         for ingredient in ingredients:
             # Clean ingredient string (remove parenthetical notes like "(optional)")
             clean_ingredient = ingredient.split("(")[0].strip()
@@ -265,7 +262,7 @@ def handle_add_recipe_to_basket(recipe: recipes_data.Recipe, session_id: str) ->
 
 
 # Inject global CSS styling
-inject_global_css()
+load_global_styles()
 
 # Add recipe tag pill CSS and planned badge CSS
 st.markdown(
@@ -319,23 +316,36 @@ CATEGORY_CHIPS = [
     ("Healthy", "healthy"),
 ]
 
-# Page header
-section_header(
-    title="Recipes & ideas",
-    eyebrow="MEAL INSPIRATION",
-    help_text="Quick, simple recipes tailored to your household size."
+# Page header with basket button
+page_header(
+    title="Recipes",
+    subtitle="Simple, healthy meal ideas tailored to your household.",
+    right=_render_basket_button
 )
 
-# Household profile-aware hint
+# Short caption + optional expander
 profile_key = st.session_state.get("household_profile_key", "single")
 profile = get_profile_by_key(profile_key)
-st.caption(
-    f"Recipes are suggested for your household profile: **{profile.label}** "
-    f"(typical servings multiplier: x{profile.serving_multiplier})."
-)
+st.caption(f"Recipes scaled for **{profile.label.lower()}** household.")
+
+with st.expander("How recipes work", expanded=False):
+    st.markdown("""
+    - Browse recipes by meal type, dietary preferences, or search terms
+    - View ingredients and cooking steps for any recipe
+    - Add recipe ingredients to your shopping basket with one click
+    """)
 
 # Get session ID for basket operations (persists across page navigations)
 session_id = get_or_create_session_id()
+
+# Prepare basket button function for header
+from ui.layout import get_basket_count
+
+def _render_basket_button():
+    basket_count = get_basket_count(session_id)
+    basket_label = f"🧺 Basket ({basket_count})" if basket_count > 0 else "🧺 Basket"
+    if st.button(basket_label, key="header_basket_btn_recipes", use_container_width=True):
+        st.switch_page("pages/03_🧺_My_Basket.py")
 
 # Initialize planned recipes tracking
 if "planned_recipes" not in st.session_state:
@@ -402,8 +412,22 @@ else:
     # Use dropdown value if no chip is selected
     effective_tag_filter = selected_tag if selected_tag != "All" else None
 
-# Get filtered recipes
-recipes = recipes_data.filter_recipes(
+# Cache recipe filtering
+@st.cache_data(ttl=300)  # Cache for 5 minutes (recipes don't change often)
+def get_filtered_recipes_cached(
+    meal_type: Optional[str],
+    tag: Optional[str],
+    search_text: Optional[str]
+) -> List[Recipe]:
+    """Get filtered recipes with caching."""
+    return recipes_data.filter_recipes(
+        meal_type=meal_type,
+        tag=tag,
+        search_text=search_text
+    )
+
+# Get filtered recipes (cached)
+recipes = get_filtered_recipes_cached(
     meal_type=selected_meal_type if selected_meal_type != "All" else None,
     tag=effective_tag_filter,
     search_text=search_text if search_text and search_text.strip() else None
@@ -411,137 +435,78 @@ recipes = recipes_data.filter_recipes(
 
 def render_recipe_card(recipe: Recipe, profile, session_id: str) -> None:
     """
-    Render a single recipe card in the Recipes page grid.
+    Render a compact recipe card.
     
     Args:
         recipe: Recipe object to display
         profile: HouseholdProfile object for serving hints
         session_id: Session ID for event logging
     """
-    with st.container():
-        st.markdown('<div class="nlga-card">', unsafe_allow_html=True)
+    with card():
+        # Title
+        st.markdown(f"**{recipe.title}**")
         
-        # Image
-        img_path = get_recipe_image_path(recipe)
-        if img_path is not None:
-            st.image(str(img_path), use_container_width=True)
-        
-        # Title only (no badge at top)
-        st.markdown(f"### {recipe.title}")
-        
-        # Check if recipe is planned (reused later for bottom badge)
-        planned_ids = st.session_state.get("planned_recipes", set())
-        is_planned = recipe.id in planned_ids
-        
-        # Description
+        # 1-line summary (description)
         if getattr(recipe, "description", None):
-            st.caption(recipe.description)
+            st.caption(recipe.description[:100] + "..." if len(recipe.description) > 100 else recipe.description)
         
-        # Meta + tags in two columns
-        meta_col, tags_col = st.columns([2, 1])
-        
-        with meta_col:
-            meal_type_display = getattr(recipe, "meal_type", "Unknown")
-            difficulty_display = getattr(recipe, "difficulty", "Unknown")
-            prep_time = getattr(recipe, "prep_time_minutes", None)
-            
-            meta_lines = [
-                f"- **Meal type:** {meal_type_display}",
-                f"- **Difficulty:** {difficulty_display}",
-            ]
-            if prep_time is not None:
-                meta_lines.append(f"- **Prep time:** {prep_time} minutes")
-            
-            st.markdown("\n".join(meta_lines))
-        
-        with tags_col:
-            if getattr(recipe, "tags", None) and recipe.tags:
-                st.markdown("**Tags**")
-                # Simple pill-style display
-                tags_html = " ".join(
-                    f"<span class='recipe-tag'>{tag}</span>" for tag in sorted(recipe.tags)
-                )
-                st.markdown(tags_html, unsafe_allow_html=True)
-        
-        # Health claim badges (limited to 3, with tooltips)
-        MAX_CLAIMS = 3
-        if getattr(recipe, "health_claims", None) and recipe.health_claims:
-            visible_claims = recipe.health_claims[:MAX_CLAIMS]
-            claims_html = " ".join(
-                f"<span class='recipe-claim' title='{claim}'>{claim}</span>"
-                for claim in visible_claims
+        # Tags as pills (compact)
+        if getattr(recipe, "tags", None) and recipe.tags:
+            tags_html = " ".join(
+                f"<span class='recipe-tag'>{tag}</span>" for tag in sorted(recipe.tags)[:5]  # Limit to 5 tags
             )
-            st.markdown(claims_html, unsafe_allow_html=True)
+            st.markdown(tags_html, unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
         
-        # Household tip
-        st.markdown(
-            f"<small>Tip: For your {profile.label.lower()} household, consider using "
-            f"{profile.serving_multiplier:.1f}× the base ingredients if you want leftovers.</small>",
-            unsafe_allow_html=True,
-        )
-        
-        # Price + Planned badge row (commerce row at bottom)
-        price_col, planned_col = st.columns([2, 1])
-        with price_col:
-            if getattr(recipe, "estimated_price_eur", None) is not None:
-                st.markdown(f"**€{recipe.estimated_price_eur:.2f}**")
-        with planned_col:
-            if is_planned:
-                st.markdown(
-                    "<span class='recipe-planned-badge'>Planned</span>",
-                    unsafe_allow_html=True,
-                )
-        
-        # Details expander (ingredients + steps)
-        with st.expander("View ingredients & steps"):
-            # Log recipe viewed event once per session
-            viewed_flag_key = f"recipe_{recipe.id}_viewed"
-            if not st.session_state.get(viewed_flag_key, False):
-                # Best-effort analytics: log recipe_viewed once per session
-                try:
-                    from aggregator.events import log_recipe_viewed
-                    log_recipe_viewed(
-                        session_id=session_id,
-                        recipe_id=recipe.id,
-                        recipe_name=recipe.title,
-                        associated_items_count=len(recipe.ingredients),
-                    )
-                except Exception:
-                    pass  # Non-blocking: continue even if logging fails
-                st.session_state[viewed_flag_key] = True
-            
-            st.markdown("**Ingredients**")
-            for item in recipe.ingredients:
-                st.markdown(f"- {item}")
-            
-            st.markdown("**Steps**")
-            if hasattr(recipe, "instructions") and recipe.instructions:
-                for i, step in enumerate(recipe.instructions, start=1):
-                    st.markdown(f"{i}. {step}")
+        # Add ingredients button
+        if st.button("Add ingredients", key=f"add_ing_{recipe.id}", use_container_width=True):
+            # Handle adding ingredients to basket
+            added_count = handle_add_recipe_to_basket(recipe, session_id)
+            if added_count > 0:
+                st.toast("✅ Added to basket", icon="✅")
+                st.rerun()
             else:
-                st.info("Instructions not available for this recipe.")
+                st.toast("⚠️ Error", icon="⚠️")
         
-        # Plan button (demo)
-        if st.button("Plan this recipe", key=f"plan_{recipe.id}"):
-            planned = st.session_state.get("planned_recipes", set())
-            planned.add(recipe.id)
-            st.session_state["planned_recipes"] = planned
-            
-            # Log analytics (best-effort only)
-            try:
-                from aggregator.events import log_recipe_planned
-                current_session_id = get_or_create_session_id()
-                log_recipe_planned(
-                    session_id=current_session_id,
-                    recipe_id=recipe.id,
-                    title=recipe.title
-                )
-            except Exception:
-                pass  # Non-blocking: continue even if logging fails
-            
-            st.success("Recipe added to your meal ideas for this week (demo).")
-        
-        st.markdown('</div>', unsafe_allow_html=True)
+        # Details expander (serves as "View" functionality - always available, collapsed by default)
+        with st.expander("View ingredients & steps", expanded=False):
+                # Log recipe viewed event once per session
+                viewed_flag_key = f"recipe_{recipe.id}_viewed"
+                if not st.session_state.get(viewed_flag_key, False):
+                    try:
+                        from aggregator.events import log_recipe_viewed
+                        log_recipe_viewed(
+                            session_id=session_id,
+                            recipe_id=recipe.id,
+                            recipe_name=recipe.title,
+                            associated_items_count=len(recipe.ingredients),
+                        )
+                    except Exception:
+                        pass
+                    st.session_state[viewed_flag_key] = True
+                
+                # Meta info
+                meal_type_display = getattr(recipe, "meal_type", "Unknown")
+                prep_time = getattr(recipe, "prep_time_minutes", None)
+                if prep_time:
+                    st.caption(f"{meal_type_display} • {prep_time} min")
+                
+                # Ingredients
+                st.markdown("**Ingredients**")
+                for item in recipe.ingredients:
+                    st.markdown(f"- {item}")
+                
+                # Steps
+                st.markdown("**Steps**")
+                if hasattr(recipe, "instructions") and recipe.instructions:
+                    for i, step in enumerate(recipe.instructions, start=1):
+                        st.markdown(f"{i}. {step}")
+                else:
+                    st.caption("Instructions not available.")
+                
+                # Price if available
+                if getattr(recipe, "estimated_price_eur", None) is not None:
+                    st.markdown(f"**Estimated cost:** €{recipe.estimated_price_eur:.2f}")
 
 
 def render_planned_summary() -> None:
@@ -603,9 +568,11 @@ with grid_col:
     
     with grid_content_col:
         if not recipes:
-            st.info(
-                "No recipes matched these filters. Try clearing the filters or searching for "
-                "'pasta', 'kipfilet', or 'havermout'."
+            show_empty_state(
+                title="No recipes found",
+                subtitle="Try clearing the filters or searching for 'pasta', 'kipfilet', or 'havermout'.",
+                action_label="Clear filters",
+                action_page_path=None  # Stay on same page
             )
         else:
             # Results count

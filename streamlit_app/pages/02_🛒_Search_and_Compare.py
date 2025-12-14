@@ -26,30 +26,36 @@ from datetime import datetime
 
 from utils.session import get_or_create_session_id
 from utils.api_client import search_products, add_to_cart_backend, view_cart_backend, get_cart_summary, get_price_history
-from utils.ui_components import (
-    render_product_summary, render_basket_summary_chip
-)
+# Removed render_product_summary import - summary section removed to reduce visual noise
 from utils.sponsored_data import get_sponsored_deals_for_search
 from utils.retailers import RETAILER_OPTIONS, DEFAULT_RETAILERS, get_retailer_display_name
-from ui.style import inject_global_css, section_header, pill_tag, image_card, render_footer
+from ui.styles import load_global_styles
+from ui.layout import page_header, section, card
+from ui.style import render_footer  # Keep footer function
+from ui.style import pill_tag  # Keep pill_tag helper
+from ui.feedback import show_error, show_empty_state, working_spinner
 
 # Inject global CSS styling
-inject_global_css()
+load_global_styles()
 
-# Page header
-section_header(
+# Page header with basket button
+page_header(
     title="Search & compare groceries",
-    eyebrow="COMPARE SUPERMARKETS",
-    help_text="Search across Albert Heijn, Jumbo, Dirk and Picnic, then add the best options to your basket."
+    subtitle="Search across Albert Heijn, Jumbo, Dirk and Picnic, then add the best options to your basket.",
+    right=_render_basket_button
 )
 
 # Get session ID for cart operations (persists across page navigations)
 session_id = get_or_create_session_id()
 
-# Show basket summary chip if user has items in basket
-cart_summary = get_cart_summary(session_id)
-if cart_summary:
-    render_basket_summary_chip(cart_summary)
+# Prepare basket button function for header
+from ui.layout import get_basket_count
+
+def _render_basket_button():
+    basket_count = get_basket_count(session_id)
+    basket_label = f"🧺 Basket ({basket_count})" if basket_count > 0 else "🧺 Basket"
+    if st.button(basket_label, key="header_basket_btn_search", use_container_width=True):
+        st.switch_page("pages/03_🧺_My_Basket.py")
 
 # Define options mappings (needed both inside and outside form)
 # Use centralized retailer configuration
@@ -222,8 +228,8 @@ if submitted:
         # Convert page from 1-indexed (user) to 0-indexed (API)
         page = page_user - 1
         
-        # Perform search
-        with st.spinner(f"🔍 Searching for '{query.strip()}' across {len(retailers)} retailer(s)..."):
+        # Perform search with spinner
+        with working_spinner("Working…"):
             results = search_products(
                 query=query.strip(),
                 retailers=retailers if retailers else None,
@@ -235,7 +241,10 @@ if submitted:
         
         # Handle search results
         if results is None:
-            st.error("❌ Could not reach the backend. Please check your connection and try again.")
+            show_error(
+                "Could not reach the backend.",
+                hint="Please check your connection and try again."
+            )
             # Clear stored results on error
             if "search_results" in st.session_state:
                 del st.session_state["search_results"]
@@ -331,11 +340,16 @@ if submitted or has_stored_results:
     # Show products table if we have any results
     if not products or len(products) == 0:
         if problematic:
-            st.warning(f"🔍 No products found for '{query}'. Some retailers may be temporarily unavailable (see above).")
+            show_error(
+                f"No products found for '{query}'.",
+                hint="Some retailers may be temporarily unavailable (see above)."
+            )
         else:
-            st.warning(
-                "We didn't find matching products for this search across your selected retailers. "
-                "Try a broader term, check spelling, or enable more supermarkets."
+            show_empty_state(
+                title="No products found",
+                subtitle="Try a broader term, check spelling, or enable more supermarkets.",
+                action_label="Try another search",
+                action_page_path=None  # Stay on same page
             )
     else:
         # Convert results to DataFrame
@@ -357,34 +371,31 @@ if submitted or has_stored_results:
             st.markdown("### Results")
             st.caption(f"Showing **{num_products}** products across **{len(retailers_used)}** retailer(s).")
             
-            summary_cols = st.columns(3, gap="large")
-        with summary_cols[0]:
-            st.markdown("**💶 Cheapest overall**")
-            st.caption("Look for the lowest total price per product.")
-        with summary_cols[1]:
-            st.markdown("**📏 Best per unit**")
-            st.caption("Use unit price to compare different package sizes fairly.")
-        with summary_cols[2]:
-            st.markdown("**🥦 Health nudges**")
-            st.caption("Health tags highlight better choices where available.")
-        
-        st.divider()
-        
-        # Display summary metrics
-        st.subheader("📊 Summary")
-        render_product_summary(df)
+        # Removed summary section to reduce visual noise - legend is shown above table
         
         # Display unified Product Comparison table with Add to Basket selection
         st.subheader("📋 Product Comparison")
         
+        # Compact legend (appears only once)
+        st.caption("💰 Cheapest overall   🟢 Healthy   ⚪ Neutral")
+        
         # Get current cart items from backend to show which are already added
         current_cart = view_cart_backend(session_id)
         basket_item_ids = set()
+        basket_item_count = 0
         if current_cart and current_cart.get("items"):
             basket_item_ids = {
                 f"{item.get('retailer', '')}:{item.get('product_id', '')}"
                 for item in current_cart["items"]
             }
+            basket_item_count = len(current_cart["items"])
+        
+        # Update session state with basket count for action bar
+        st.session_state["basket_item_count"] = basket_item_count
+        
+        # Initialize selected items tracking in session state
+        if "selected_items_for_basket" not in st.session_state:
+            st.session_state["selected_items_for_basket"] = set()
         
         # Prepare unified DataFrame with all comparison columns + selection
         unified_df = df.copy()
@@ -511,182 +522,132 @@ if submitted or has_stored_results:
         if already_added_count > 0:
             st.info(f"ℹ️ {already_added_count} item(s) are already in your basket.")
         
-        # Add Status column to show which items are already in basket
-        unified_df["Status"] = unified_df["in_basket"].apply(lambda x: "✅ In basket" if x else "")
+        # Add Status column to show which items are already in basket (de-emphasized)
+        unified_df["Status"] = unified_df["in_basket"].apply(lambda x: "✅" if x else "")
         
-        # Define column order for display (product_id will be hidden)
-        display_columns = []
-        if "💰" in unified_df.columns:
-            display_columns.append("💰")
-        display_columns.extend(["name", "retailer", "Price"])
-        if "Unit" in unified_df.columns and unified_df["Unit"].notna().any():
-            display_columns.append("Unit")
-        if "Best Deals" in unified_df.columns:
-            display_columns.append("Best Deals")
-        if "Health" in unified_df.columns:
-            display_columns.append("Health")
-        display_columns.append("Status")  # Show status before add_to_basket
-        display_columns.append("add_to_basket")  # Rightmost column
+        # Action bar ABOVE the table
+        action_col1, action_col2, action_col3 = st.columns([2, 1, 1], gap="small")
         
-        # Build column configuration
-        column_config = {
-            "💰": st.column_config.TextColumn(
-                "Cheapest",
-                help="💰 indicates this is the cheapest option for this product",
-                width="small"
-            ),
-            "name": st.column_config.TextColumn(
-                "Product Name",
-                help="Product name from retailer"
-            ),
-            "retailer": st.column_config.TextColumn(
-                "Retailer",
-                help="Retailer: Albert Heijn, Jumbo, Picnic, or Dirk"
-            ),
-            "Price": st.column_config.TextColumn(
-                "Price",
-                help="Price in euros (€)",
-                width="small"
-            ),
-            "Unit": st.column_config.TextColumn(
-                "Unit",
-                help="Product size/unit information",
-                disabled=True
-            ),
-            "Best Deals": st.column_config.TextColumn(
-                "Best Deals",
-                help="💰 Cheapest overall, ⚖️ Best per unit",
-                disabled=True
-            ),
-            "Health": st.column_config.TextColumn(
-                "Health",
-                help="Health category: Healthy, Less healthy, or Neutral",
-                disabled=True
-            ),
-            "Status": st.column_config.TextColumn(
-                "Status",
-                help="Shows if item is already in your basket",
-                disabled=True,
-                width="small"
-            ),
-            "add_to_basket": st.column_config.CheckboxColumn(
-                "Add to basket",
-                help="Select items you want to add to your basket",
-                default=False,
-                width="small"
-            )
-        }
+        with action_col1:
+            st.markdown(f"**Basket:** {basket_item_count} items")
         
-        # Render unified table with st.data_editor (allows checkbox editing)
+        with action_col2:
+            # Placeholder for "Add selected" button (will be populated if checkboxes are used)
+            pass
+        
+        with action_col3:
+            # Show current sort (read-only display)
+            current_sort = st.session_state.get("search_sort_by", "Price (low to high)")
+            st.caption(f"Sort: {current_sort}")
+        
+        st.markdown("---")
+        
+        # Create custom table layout with inline ➕ buttons
+        # Table header
+        header_cols = st.columns([0.5, 3, 1, 1, 1, 0.5, 0.5], gap="small")
+        with header_cols[0]:
+            st.markdown("**💰**")
+        with header_cols[1]:
+            st.markdown("**Product**")
+        with header_cols[2]:
+            st.markdown("**Retailer**")
+        with header_cols[3]:
+            st.markdown("**Price**")
+        with header_cols[4]:
+            st.markdown("**Health**")
+        with header_cols[5]:
+            if already_added_count > 0:
+                st.markdown("**Status**")
+        with header_cols[6]:
+            st.markdown("**Action**")
+        
+        st.markdown("---")
+        
         # Create a mapping from row index to product_id for stable reference
-        # We'll use this mapping instead of including product_id in the visible table
         index_to_product_id = unified_df["product_id"].to_dict()
         
-        # Render table without product_id column (cleaner UI)
-        table_df = unified_df[display_columns].copy()
-        
-        edited_df = st.data_editor(
-            table_df,
-            column_config=column_config,
-            width='stretch',
-            hide_index=True,
-            key="product_comparison_table"
-        )
-        
-        # Count selected items
-        selected_count = edited_df["add_to_basket"].sum() if "add_to_basket" in edited_df.columns else 0
-        
-        # Add to basket button (below table)
-        if selected_count > 0:
-            add_button = st.button(
-                f"➕ Add {selected_count} Selected Item(s) to Basket",
-                type="primary",
-                width='stretch'
-            )
+        # Render each row with inline ➕ button
+        for idx, row in unified_df.iterrows():
+            product_id_ref = index_to_product_id.get(idx)
+            if not product_id_ref:
+                continue
             
-            if add_button:
-                # Get selected rows
-                selected_mask = edited_df["add_to_basket"] == True
-                selected_rows = edited_df[selected_mask]
+            # Find matching product
+            matching_product = None
+            for product in products:
+                prod_id = product.get("id") or product.get("product_id", "")
+                retailer = product.get("retailer", "")
+                item_id = f"{retailer}:{prod_id}" if ":" not in str(prod_id) else str(prod_id)
                 
-                added_count = 0
-                skipped_count = 0
-                
-                # Process each selected row using index mapping to product_id
-                for idx, selected_row in selected_rows.iterrows():
-                    # Get product_id from index mapping (stable reference)
-                    product_id_ref = index_to_product_id.get(idx)
-                    if not product_id_ref:
-                        skipped_count += 1
-                        continue
-                    
-                    # Find matching product in original products list using product_id
-                    matching_product = None
-                    for product in products:
-                        # Match by product_id (handle both "retailer:id" and "id" formats)
-                        prod_id = product.get("id") or product.get("product_id", "")
-                        retailer = product.get("retailer", "")
-                        
-                        # Compare: product_id_ref could be "retailer:id" or just "id"
-                        if str(product_id_ref) == str(prod_id):
-                            matching_product = product
-                            break
-                        elif ":" in str(product_id_ref) and str(product_id_ref) == f"{retailer}:{prod_id}":
-                            matching_product = product
-                            break
-                        elif ":" not in str(product_id_ref) and str(prod_id).split(":")[-1] == str(product_id_ref):
-                            matching_product = product
-                            break
-                    
-                    if not matching_product:
-                        skipped_count += 1
-                        continue
-                    
-                    product = matching_product
-                    
-                    # Check if already in basket (skip if yes)
-                    prod_id = product.get("id") or product.get("product_id", "")
-                    retailer = product.get("retailer", "")
-                    item_id = f"{retailer}:{prod_id}" if ":" not in str(prod_id) else str(prod_id)
-                    
-                    if item_id in basket_item_ids:
-                        skipped_count += 1
-                        continue
-                    
-                    # Extract product ID (handle both id formats like "ah:123" or just "123")
-                    product_id_clean = str(prod_id).split(":")[-1] if ":" in str(prod_id) else str(prod_id)
-                    
-                    # Add to cart via backend API
-                    result = add_to_cart_backend(
-                        session_id=session_id,
-                        retailer=retailer,
-                        product_id=product_id_clean,
-                        name=product.get("name", ""),
-                        price_eur=product.get("price_eur") or product.get("price", 0.0),
-                        quantity=1,
-                        image_url=product.get("image_url"),
-                        health_tag=product.get("health_tag")
-                    )
-                    
-                    if result is not None:
-                        added_count += 1
-                    else:
-                        skipped_count += 1
-                
-                # Show success message
-                if added_count > 0:
-                    st.success(f"✅ Added {added_count} item(s) to your basket!")
-                    if skipped_count > 0:
-                        st.info(f"ℹ️ {skipped_count} item(s) were already in your basket and were skipped.")
-                    st.caption("💡 View your basket on the **My Basket** page in the sidebar.")
-                    
-                    # After adding items, trigger a rerun to refresh cart status
-                    # But since results are stored in session_state, the table will remain visible
-                    st.rerun()
+                if str(product_id_ref) == item_id or str(product_id_ref) == f"{retailer}:{prod_id}":
+                    matching_product = product
+                    break
+            
+            if not matching_product:
+                continue
+            
+            # Check if already in basket
+            prod_id = matching_product.get("id") or matching_product.get("product_id", "")
+            retailer = matching_product.get("retailer", "")
+            item_id = f"{retailer}:{prod_id}" if ":" not in str(prod_id) else str(prod_id)
+            is_already_added = item_id in basket_item_ids
+            
+            # Create row columns
+            row_cols = st.columns([0.5, 3, 1, 1, 1, 0.5, 0.5], gap="small")
+            
+            with row_cols[0]:
+                cheapest_indicator = unified_df.loc[idx, "💰"] if "💰" in unified_df.columns else ""
+                st.markdown(cheapest_indicator if cheapest_indicator else "")
+            
+            with row_cols[1]:
+                product_name = matching_product.get("name", "Unknown")
+                st.markdown(product_name)
+            
+            with row_cols[2]:
+                retailer_display = get_retailer_display_name(retailer)
+                st.markdown(f'<span class="pill-tag">{retailer_display}</span>', unsafe_allow_html=True)
+            
+            with row_cols[3]:
+                price_display = unified_df.loc[idx, "Price"] if "Price" in unified_df.columns else "N/A"
+                st.markdown(f"**{price_display}**")
+            
+            with row_cols[4]:
+                health_display = unified_df.loc[idx, "Health"] if "Health" in unified_df.columns else ""
+                # Extract just the icon/emoji part
+                health_icon = health_display.split()[0] if health_display and len(health_display.split()) > 0 else health_display
+                st.markdown(health_icon if health_icon else "")
+            
+            with row_cols[5]:
+                if already_added_count > 0:
+                    status_display = unified_df.loc[idx, "Status"] if "Status" in unified_df.columns else ""
+                    st.markdown(status_display if status_display else "")
+            
+            with row_cols[6]:
+                if is_already_added:
+                    st.button("✅", disabled=True, key=f"add_btn_{idx}", use_container_width=True)
                 else:
-                    st.warning("⚠️ All selected items were already in your basket.")
-        else:
-            st.caption("👆 Select items using the checkboxes in the rightmost column and click 'Add Selected Item(s) to Basket' above.")
+                    if st.button("➕", key=f"add_btn_{idx}", use_container_width=True):
+                        product_id_clean = str(prod_id).split(":")[-1] if ":" in str(prod_id) else str(prod_id)
+                        
+                        result = add_to_cart_backend(
+                            session_id=session_id,
+                            retailer=retailer,
+                            product_id=product_id_clean,
+                            name=matching_product.get("name", ""),
+                            price_eur=matching_product.get("price_eur") or matching_product.get("price", 0.0),
+                            quantity=1,
+                            image_url=matching_product.get("image_url"),
+                            health_tag=matching_product.get("health_tag")
+                        )
+                        
+                        if result is not None:
+                            st.toast("✅ Added to basket", icon="✅")
+                            # Store results in session_state to prevent rerun from clearing them
+                            if "search_results" not in st.session_state:
+                                st.session_state["search_results"] = products
+                            st.rerun()
+        
+        # Removed old checkbox-based "Add to basket" section - replaced by inline ➕ buttons
         
         # Price History Demo section
         st.markdown("---")
@@ -739,8 +700,7 @@ if submitted or has_stored_results:
         #   - Add "Add all results to basket" quick action
         #   - Quick-add buttons next to each row
         
-        with side_col:
-            image_card("search_side", caption="Healthy, budget-friendly picks from all supermarkets.")
+        # Side column - removed decorative image
 
 else:
     # Initial state - show helpful information

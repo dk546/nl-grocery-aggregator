@@ -35,13 +35,18 @@ from streamlit_app.utils.session import get_or_create_session_id
 from streamlit_app.utils.api_client import add_to_cart_backend
 from streamlit_app.utils.retailers import RETAILER_DISPLAY_NAMES, ALL_RETAILER_CODES
 from aggregator.events import log_meal_plan_sent_to_cart
-from ui.style import inject_global_css, render_footer
+from ui.styles import load_global_styles
+from ui.layout import page_header, section
+from ui.style import render_footer  # Keep footer function
 
 # Inject global CSS styling
-inject_global_css()
+load_global_styles()
 
 # Page header
-st.markdown("## 🗓 Meal Planner")
+page_header(
+    title="🗓 Meal Planner",
+    subtitle="Plan your weekly meals and automatically add ingredients to your basket."
+)
 st.caption("Plan simple meals for your week using recipes you've marked as planned.")
 
 # Initialize meal plan
