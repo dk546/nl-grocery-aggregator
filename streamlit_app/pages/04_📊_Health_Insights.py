@@ -21,7 +21,6 @@ if str(project_root) not in sys.path:
 
 import pandas as pd
 import streamlit as st
-import altair as alt
 
 from utils.session import get_or_create_session_id
 from utils.api_client import view_cart_backend
@@ -35,8 +34,11 @@ from ui.styles import load_global_styles
 from ui.layout import page_header, section, card, kpi_row, render_basket_button
 from ui.style import render_footer
 from ui.feedback import show_empty_state
-from ui.feedback import show_empty_state  # Keep footer function
-from ui.style import pill_tag  # Keep pill_tag helper
+from ui.charts import (
+    build_radial_score,
+    build_donut_composition,
+    build_diverging_category_bars
+)
 
 # Inject global CSS styling
 load_global_styles()
@@ -141,174 +143,116 @@ else:
 # Calculate items to improve (unhealthy items)
 items_to_improve = unhealthy_count
 
-# Calculate variety score (number of unique categories, if available)
-variety_score = "—"
-if "category" in df.columns:
-    unique_categories = df["category"].nunique()
-    variety_score = f"{unique_categories} categories"
+# TOP ROW: Hero charts (2 columns) - aligned grid
+hero_col1, hero_col2 = st.columns(2, gap="medium")
 
-# KPI row
-kpi_row([
-    {"label": "Health score", "value": f"{score}/100", "icon": "📊"},
-    {"label": "% healthy", "value": f"{healthy_pct_all:.0f}%", "icon": "🥦"},
-    {"label": "Items to improve", "value": items_to_improve, "icon": "⚠️"},
-    {"label": "Variety", "value": variety_score, "icon": "📦"},
-])
+with hero_col1:
+    with card():
+        section("Health score", caption=None)
+        score_chart = build_radial_score(score, score_category)
+        st.altair_chart(score_chart, use_container_width=True)
 
-st.markdown("<br>", unsafe_allow_html=True)
+with hero_col2:
+    with card():
+        section("Basket composition", caption=None)
+        donut_data = {
+            "Healthy": healthy_count,
+            "Neutral": neutral_count,
+            "Less Healthy": unhealthy_count,
+        }
+        donut_chart = build_donut_composition(donut_data)
+        st.altair_chart(donut_chart, use_container_width=True)
 
-# Navigation CTAs
+# SECOND ROW: Key takeaways as insight cards
+section("Key takeaways")
+
+# Calculate shares for insights
+total_count = healthy_count + neutral_count + unhealthy_count
+healthy_share = (healthy_count / total_count) if total_count > 0 else 0.0
+less_healthy_share = (unhealthy_count / total_count) if total_count > 0 else 0.0
+
+# Find main driver category (most common health tag)
+if "category" in df.columns and len(df["category"].dropna()) > 0:
+    category_counts = df["category"].value_counts()
+    main_category = category_counts.index[0] if len(category_counts) > 0 else None
+else:
+    main_category = None
+
+# Generate 3 key takeaways with icons - equal height cards
+insight_col1, insight_col2, insight_col3 = st.columns(3, gap="medium")
+
+with insight_col1:
+    st.markdown('<div class="nlga-card nlga-insight-card">', unsafe_allow_html=True)
+    st.markdown("### 📊 Overall score")
+    st.markdown(f"Your basket is **{score_category.lower()}** ({score}/100).")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with insight_col2:
+    st.markdown('<div class="nlga-card nlga-insight-card">', unsafe_allow_html=True)
+    st.markdown("### 🎯 Main driver")
+    if main_category:
+        st.markdown(f"**{main_category}** is your largest category.")
+    elif healthy_share >= 0.5:
+        st.markdown("Most items are healthy. Keep it up!")
+    elif less_healthy_share >= 0.4:
+        st.markdown(f"**{int(less_healthy_share * 100)}%** less healthy items need attention.")
+    else:
+        st.markdown("Mix is balanced. Small swaps can help.")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with insight_col3:
+    st.markdown('<div class="nlga-card nlga-insight-card">', unsafe_allow_html=True)
+    st.markdown("### 💡 Next step")
+    if unhealthy_count > 0:
+        st.markdown(f"Swap **{unhealthy_count} item(s)** for healthier alternatives.")
+    elif healthy_share < 0.5:
+        st.markdown("Add more vegetables, whole grains, or lean proteins.")
+    else:
+        st.markdown("Your basket looks great! Maintain this balance.")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# THIRD ROW: Diverging bars by category
+if "category" in df.columns and len(df["category"].dropna()) > 0:
+    section("What drives your score")
+    
+    # Calculate healthy vs less healthy percentages by category
+    category_data = []
+    for category in df["category"].dropna().unique():
+        cat_df = df[df["category"] == category]
+        cat_total = len(cat_df)
+        if cat_total > 0:
+            healthy_items = len(cat_df[cat_df["health_tag"] == "healthy"])
+            less_healthy_items = len(cat_df[cat_df["health_tag"] == "unhealthy"])
+            
+            category_data.append({
+                "category": category,
+                "healthy_pct": healthy_items / cat_total,
+                "less_healthy_pct": less_healthy_items / cat_total,
+            })
+    
+    # Sort by total items and take top 8
+    category_data_df = pd.DataFrame(category_data)
+    if not category_data_df.empty:
+        # Add total count for sorting
+        category_totals = df["category"].value_counts()
+        category_data_df["total_items"] = category_data_df["category"].map(category_totals)
+        category_data_df = category_data_df.sort_values("total_items", ascending=False).head(8)
+        category_data_df = category_data_df.drop("total_items", axis=1)
+        
+        with card():
+            diverging_chart = build_diverging_category_bars(category_data_df)
+            st.altair_chart(diverging_chart, use_container_width=True)
+    else:
+        st.caption("No category breakdown available.")
+
+# Navigation CTAs (compact, consistent sizing)
 nav_col1, nav_col2 = st.columns(2, gap="medium")
 with nav_col1:
     if st.button("Open basket", use_container_width=True, type="secondary"):
         st.switch_page("pages/03_🧺_My_Basket.py")
 with nav_col2:
-    if st.button("Find savings", use_container_width=True):
+    if st.button("Find savings", use_container_width=True, type="secondary"):
         st.switch_page("pages/03_🧺_My_Basket.py")
-
-st.divider()
-
-# Main content - simplified layout
-# Primary chart: Donut chart for basket composition
-with card("Basket composition"):
-    # Create DataFrame for donut chart (exclude "unknown" and zero counts)
-    donut_data = [
-        {"segment": "🥦 Healthy", "count": healthy_count},
-        {"segment": "⚪ Neutral", "count": neutral_count},
-        {"segment": "⚠️ Less Healthy", "count": unhealthy_count},
-    ]
-    df_donut = pd.DataFrame(donut_data)
-    df_donut = df_donut[df_donut["count"] > 0]
-    
-    if df_donut.empty:
-        st.info("No items in basket yet. Add items to see health breakdown.")
-    else:
-        # Calculate percentages
-        total_count = df_donut["count"].sum()
-        if total_count > 0:
-            df_donut["percent"] = df_donut["count"] / total_count
-        else:
-            df_donut["percent"] = 0.0
-        
-        # Create donut chart with Altair
-        chart = (
-            alt.Chart(df_donut)
-            .mark_arc(innerRadius=60)  # donut effect
-            .encode(
-                theta=alt.Theta("count:Q", stack=True),
-                color=alt.Color(
-                    "segment:N",
-                    scale=alt.Scale(
-                        domain=["🥦 Healthy", "⚪ Neutral", "⚠️ Less Healthy"],
-                        range=["#22c55e", "#94a3b8", "#ef4444"]  # green, gray, red
-                    ),
-                    legend=alt.Legend(title=None, orient="right")
-                ),
-                tooltip=[
-                    "segment:N",
-                    "count:Q",
-                    alt.Tooltip("percent:Q", format=".0%", title="Share"),
-                ],
-            )
-            .properties(
-                width=400,
-                height=400
-            )
-        )
-        
-        # Add percentage labels text layer
-        text = (
-            alt.Chart(df_donut)
-            .mark_text(radius=110, size=14, align="center", baseline="middle")
-            .encode(
-                theta=alt.Theta("count:Q", stack=True),
-                text=alt.Text("percent:Q", format=".0%"),
-                color=alt.value("white"),  # ensures contrast on colored slices
-            )
-        )
-        
-        # Combine chart and text
-        donut_chart = chart + text
-        st.altair_chart(donut_chart, use_container_width=True)
-
-st.markdown("<br>", unsafe_allow_html=True)
-
-# Key Takeaways card
-with card("Key takeaways"):
-    # Calculate shares for insights
-    total_count = df_donut["count"].sum() if not df_donut.empty else 0
-    healthy_share = float(
-        df_donut.loc[df_donut["segment"] == "🥦 Healthy", "percent"].sum()
-    ) if not df_donut.empty and "🥦 Healthy" in df_donut["segment"].values else 0.0
-    
-    less_healthy_share = float(
-        df_donut.loc[df_donut["segment"] == "⚠️ Less Healthy", "percent"].sum()
-    ) if not df_donut.empty and "⚠️ Less Healthy" in df_donut["segment"].values else 0.0
-    
-    # Find main driver category
-    if "category" in df.columns:
-        category_counts = df["health_tag"].value_counts()
-        main_category = category_counts.index[0] if len(category_counts) > 0 else "mixed"
-    else:
-        main_category = "mixed"
-    
-    # Generate 3 key takeaways
-    takeaway1 = f"Your basket is **{score_category.lower()}** ({score}/100)."
-    if healthy_share >= 0.5:
-        takeaway2 = "Most items are healthy. Keep up the good choices."
-    elif less_healthy_share >= 0.4:
-        takeaway2 = f"**{int(less_healthy_share * 100)}%** of items are less healthy. Focus on swaps."
-    else:
-        takeaway2 = "Mix is balanced. Small swaps can improve your score."
-    
-    # Actionable insight
-    if unhealthy_count > 0:
-        takeaway3 = f"**{unhealthy_count} item(s)** could be swapped for healthier alternatives."
-    elif healthy_share < 0.5:
-        takeaway3 = "Add more vegetables, whole grains, or lean proteins."
-    else:
-        takeaway3 = "Your basket looks great! Maintain this balance."
-    
-    st.markdown(f"• {takeaway1}")
-    st.markdown(f"• {takeaway2}")
-    st.markdown(f"• {takeaway3}")
-
-st.markdown("<br>", unsafe_allow_html=True)
-
-# Secondary chart: Category breakdown (if categories available)
-if "category" in df.columns and len(df["category"].dropna()) > 0:
-    with card("Top categories"):
-        # Group by category and health tag
-        category_health = df.groupby(["category", "health_tag"]).size().reset_index(name="count")
-        category_health = category_health[category_health["health_tag"] != "unknown"]
-        
-        if not category_health.empty:
-            # Get top 5 categories by total count
-            top_categories = df["category"].value_counts().head(5).index.tolist()
-            category_health = category_health[category_health["category"].isin(top_categories)]
-            
-            # Create stacked bar chart
-            chart = (
-                alt.Chart(category_health)
-                .mark_bar()
-                .encode(
-                    x=alt.X("category:N", title="Category", sort="-y"),
-                    y=alt.Y("count:Q", title="Items"),
-                    color=alt.Color(
-                        "health_tag:N",
-                        scale=alt.Scale(
-                            domain=["healthy", "neutral", "unhealthy"],
-                            range=["#22c55e", "#94a3b8", "#ef4444"]
-                        ),
-                        legend=alt.Legend(title=None)
-                    ),
-                    tooltip=["category:N", "health_tag:N", "count:Q"]
-                )
-                .properties(height=300)
-            )
-            st.altair_chart(chart, use_container_width=True)
-        else:
-            st.caption("No category data available.")
 
 st.divider()
 

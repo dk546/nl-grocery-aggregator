@@ -23,6 +23,14 @@ def load_global_styles() -> None:
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&display=swap');
         
+        /* Spacing tokens for consistent rhythm (10-20% tighter than PR-7) */
+        :root {
+            --space-1: 0.5rem;   /* 8px - tight spacing */
+            --space-2: 0.75rem;  /* 12px - small spacing */
+            --space-3: 1rem;     /* 16px - medium spacing */
+            --space-4: 1.25rem;  /* 20px - large spacing */
+        }
+        
         /* Global font family */
         html, body, [class*="css"] {
             font-family: 'Nunito', 'sans serif' !important;
@@ -51,15 +59,15 @@ def load_global_styles() -> None:
             margin-bottom: 0.5rem !important;
         }
         
-        /* Section spacing - tightened */
+        /* Section spacing - tightened using tokens */
         section + section {
-            margin-top: 1rem !important;
+            margin-top: var(--space-3) !important;
         }
         
         /* Streamlit horizontal rule (st.divider) tweak - tightened */
         hr {
-            margin-top: 1rem !important;
-            margin-bottom: 1rem !important;
+            margin-top: var(--space-3) !important;
+            margin-bottom: var(--space-3) !important;
         }
         
         /* Paragraph text with comfortable line-height */
@@ -82,13 +90,32 @@ def load_global_styles() -> None:
             transform: translateY(-1px) !important;
         }
         
-        /* Base card - modern with subtle border - tightened spacing */
+        /* Base card - modern with subtle border - tightened spacing using tokens */
         .nlga-card {
             border-radius: 12px !important;
-            padding: 1rem 1.25rem !important;
+            padding: var(--space-3) var(--space-4) !important;
             background-color: #ffffff !important;
             border: 1px solid rgba(12, 138, 123, 0.1) !important;
-            margin-bottom: 1rem !important;
+            margin-bottom: var(--space-3) !important;
+        }
+        
+        /* Insight card - equal height, consistent padding */
+        .nlga-insight-card {
+            display: flex;
+            flex-direction: column;
+            min-height: 120px;
+            padding: var(--space-3) var(--space-4) !important;
+        }
+        
+        .nlga-insight-card h3 {
+            font-size: 1.1rem !important;
+            margin-bottom: var(--space-2) !important;
+            margin-top: 0 !important;
+        }
+        
+        .nlga-insight-card p {
+            margin-bottom: 0 !important;
+            flex-grow: 1;
         }
         
         /* Sidebar cards - compact */
@@ -124,9 +151,20 @@ def load_global_styles() -> None:
             padding-top: 1rem !important;
         }
         
-        /* Section dividers */
+        /* Section dividers - tightened using tokens */
         .stDivider {
-            margin: 1.5rem 0 !important;
+            margin: var(--space-4) 0 !important;
+        }
+        
+        /* Chart container consistency */
+        .nlga-card .vega-embed {
+            margin: 0 !important;
+        }
+        
+        /* Button alignment in header */
+        [data-testid="stButton"] {
+            display: flex;
+            align-items: center;
         }
         
         /* Metrics styling */
@@ -223,13 +261,13 @@ def load_global_styles() -> None:
             padding: 0.5rem 0.25rem !important;
         }
         
-        /* Page header styling - tightened spacing */
+        /* Page header styling - tightened spacing using tokens */
         .nlga-page-header {
-            margin-bottom: 1.25rem !important;
+            margin-bottom: var(--space-4) !important;
         }
         
         .nlga-page-header h1 {
-            margin-bottom: 0.25rem !important;
+            margin-bottom: var(--space-1) !important;
         }
         
         .nlga-page-header .subtitle {
@@ -238,19 +276,26 @@ def load_global_styles() -> None:
             font-weight: 400 !important;
         }
         
-        /* Section styling - tightened spacing */
+        /* Section styling - tightened spacing using tokens */
         .nlga-section {
-            margin-bottom: 1.25rem !important;
+            margin-bottom: var(--space-4) !important;
+            margin-top: var(--space-4) !important;
         }
         
         .nlga-section-title {
-            margin-bottom: 0.25rem !important;
+            margin-bottom: var(--space-1) !important;
         }
         
         .nlga-section-caption {
             color: #666 !important;
             font-size: 0.9rem !important;
-            margin-bottom: 0.75rem !important;
+            margin-bottom: var(--space-2) !important;
+        }
+        
+        /* Section header inside card - no extra margin */
+        .nlga-card .nlga-section {
+            margin-top: 0 !important;
+            margin-bottom: var(--space-3) !important;
         }
         
         /* KPI row styling */
