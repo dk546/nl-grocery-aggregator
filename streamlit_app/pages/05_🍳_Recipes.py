@@ -30,7 +30,7 @@ from utils.api_client import search_products, add_to_cart_backend
 from utils.profile import get_profile_by_key, HOUSEHOLD_PROFILES
 from streamlit_app.utils.recipes_data import Recipe
 from ui.styles import load_global_styles
-from ui.layout import page_header, section, card
+from ui.layout import page_header, section, card, render_basket_button
 from ui.style import render_footer  # Keep footer function
 from ui.style import pill_tag  # Keep pill_tag helper
 from ui.feedback import show_empty_state, working_spinner
@@ -316,11 +316,14 @@ CATEGORY_CHIPS = [
     ("Healthy", "healthy"),
 ]
 
+# Get session ID for basket operations (persists across page navigations)
+session_id = get_or_create_session_id()
+
 # Page header with basket button
 page_header(
     title="Recipes",
     subtitle="Simple, healthy meal ideas tailored to your household.",
-    right=_render_basket_button
+    right=lambda: render_basket_button(session_id, "recipes")
 )
 
 # Short caption + optional expander
@@ -334,18 +337,6 @@ with st.expander("How recipes work", expanded=False):
     - View ingredients and cooking steps for any recipe
     - Add recipe ingredients to your shopping basket with one click
     """)
-
-# Get session ID for basket operations (persists across page navigations)
-session_id = get_or_create_session_id()
-
-# Prepare basket button function for header
-from ui.layout import get_basket_count
-
-def _render_basket_button():
-    basket_count = get_basket_count(session_id)
-    basket_label = f"🧺 Basket ({basket_count})" if basket_count > 0 else "🧺 Basket"
-    if st.button(basket_label, key="header_basket_btn_recipes", use_container_width=True):
-        st.switch_page("pages/03_🧺_My_Basket.py")
 
 # Initialize planned recipes tracking
 if "planned_recipes" not in st.session_state:

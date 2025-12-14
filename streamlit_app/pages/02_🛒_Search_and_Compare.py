@@ -30,7 +30,7 @@ from utils.api_client import search_products, add_to_cart_backend, view_cart_bac
 from utils.sponsored_data import get_sponsored_deals_for_search
 from utils.retailers import RETAILER_OPTIONS, DEFAULT_RETAILERS, get_retailer_display_name
 from ui.styles import load_global_styles
-from ui.layout import page_header, section, card
+from ui.layout import page_header, section, card, render_basket_button
 from ui.style import render_footer  # Keep footer function
 from ui.style import pill_tag  # Keep pill_tag helper
 from ui.feedback import show_error, show_empty_state, working_spinner
@@ -38,24 +38,15 @@ from ui.feedback import show_error, show_empty_state, working_spinner
 # Inject global CSS styling
 load_global_styles()
 
+# Get session ID for cart operations (persists across page navigations)
+session_id = get_or_create_session_id()
+
 # Page header with basket button
 page_header(
     title="Search & compare groceries",
     subtitle="Search across Albert Heijn, Jumbo, Dirk and Picnic, then add the best options to your basket.",
-    right=_render_basket_button
+    right=lambda: render_basket_button(session_id, "search")
 )
-
-# Get session ID for cart operations (persists across page navigations)
-session_id = get_or_create_session_id()
-
-# Prepare basket button function for header
-from ui.layout import get_basket_count
-
-def _render_basket_button():
-    basket_count = get_basket_count(session_id)
-    basket_label = f"🧺 Basket ({basket_count})" if basket_count > 0 else "🧺 Basket"
-    if st.button(basket_label, key="header_basket_btn_search", use_container_width=True):
-        st.switch_page("pages/03_🧺_My_Basket.py")
 
 # Define options mappings (needed both inside and outside form)
 # Use centralized retailer configuration

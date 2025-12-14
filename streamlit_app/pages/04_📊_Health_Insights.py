@@ -32,7 +32,7 @@ from utils.preferences import (
     PREFERENCE_BUDGET_FIRST,
 )
 from ui.styles import load_global_styles
-from ui.layout import page_header, section, card, kpi_row
+from ui.layout import page_header, section, card, kpi_row, render_basket_button
 from ui.style import render_footer
 from ui.feedback import show_empty_state
 from ui.feedback import show_empty_state  # Keep footer function
@@ -43,15 +43,6 @@ load_global_styles()
 
 # Get session ID (shared across pages)
 session_id = get_or_create_session_id()
-
-# Prepare basket button function for header
-from ui.layout import get_basket_count
-
-def _render_basket_button():
-    basket_count = get_basket_count(session_id)
-    basket_label = f"🧺 Basket ({basket_count})" if basket_count > 0 else "🧺 Basket"
-    if st.button(basket_label, key="header_basket_btn_health", use_container_width=True):
-        st.switch_page("pages/03_🧺_My_Basket.py")
 
 # Fetch basket from backend using shared session
 try:
@@ -66,7 +57,7 @@ if not basket_items:
     page_header(
         title="Health insights",
         subtitle="Add some items to your basket first to see a simple health breakdown.",
-        right=_render_basket_button
+        right=lambda: render_basket_button(session_id, "health")
     )
     show_empty_state(
         title="Your basket is empty",
@@ -134,7 +125,7 @@ healthy_pct_known = health_data["healthy_pct_known"]
 page_header(
     title="Health Insights",
     subtitle="Quick overview of your basket's health balance and improvement opportunities.",
-    right=_render_basket_button
+    right=lambda: render_basket_button(session_id, "health")
 )
 
 # Calculate health score category

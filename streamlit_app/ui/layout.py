@@ -30,6 +30,21 @@ def get_basket_count(session_id: str) -> int:
         return 0
 
 
+def render_basket_button(session_id: str, page_key: str) -> None:
+    """
+    Render a basket button for page headers with item count.
+    
+    Args:
+        session_id: Session ID for getting cart data
+        page_key: Unique key suffix for the button (e.g., "search", "health", "recipes")
+                  Used to ensure unique button keys across pages
+    """
+    basket_count = get_basket_count(session_id)
+    basket_label = f"🧺 Basket ({basket_count})" if basket_count > 0 else "🧺 Basket"
+    if st.button(basket_label, key=f"header_basket_btn_{page_key}", use_container_width=True):
+        st.switch_page("pages/03_🧺_My_Basket.py")
+
+
 def page_header(title: str, subtitle: Optional[str] = None, right: Optional[callable] = None) -> None:
     """
     Render a consistent page header with title and optional subtitle.
