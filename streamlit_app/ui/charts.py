@@ -242,7 +242,7 @@ def build_donut_composition(counts_or_pct: Union[Dict[str, int], pd.DataFrame]) 
         align="center",
         baseline="middle",
         color="white",
-        fontWeight="medium"
+        fontWeight=600
     ).encode(
         theta=alt.Theta("count:Q", stack=True),
         text=alt.Text("percent:Q", format=".0%")
@@ -326,7 +326,7 @@ def build_diverging_category_bars(data: Union[List[Dict], pd.DataFrame]) -> alt.
             "category:N",
             sort=category_order,
             axis=alt.Axis(title=None),
-            spacing=8
+            scale=alt.Scale(paddingInner=0.2, paddingOuter=0.1)
         ),
         color=alt.Color(
             "type:N",
@@ -392,7 +392,7 @@ def build_funnel(steps: List[Tuple[str, int]]) -> alt.Chart:
             "step:N",
             sort=df["step"].tolist(),  # Maintain order
             axis=alt.Axis(title=None),
-            spacing=12
+            scale=alt.Scale(paddingInner=0.2, paddingOuter=0.1)
         ),
         color=alt.Color(
             "step:N",
@@ -512,7 +512,7 @@ def build_event_mix_stacked(data: Union[List[Dict], pd.DataFrame]) -> alt.Chart:
             "event_type:N",
             sort=df["event_type"].tolist(),
             axis=alt.Axis(title=None),
-            spacing=8
+            scale=alt.Scale(paddingInner=0.2, paddingOuter=0.1)
         ),
         color=alt.Color(
             "event_type:N",

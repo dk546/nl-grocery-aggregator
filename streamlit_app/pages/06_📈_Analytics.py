@@ -105,35 +105,80 @@ cart_adds = counts.get("cart_item_added", 0)
 exports = counts.get("export_list", 0)
 swaps = counts.get("swap_clicked", 0)
 
-# Calculate unique sessions if available from recent events
+# Calculate unique sessions and ads-ready metrics from recent events
 try:
     events_data = get_recent_events(limit=500)
     if events_data.get("db_enabled", False):
         events = events_data.get("events", [])
         unique_sessions = len(set(e.get("session_id") for e in events if e.get("session_id"))) if events else 0
+        
+        # Calculate impressions and sponsored clicks from payload
+        impressions = 0
+        sponsored_impressions = 0
+        sponsored_clicks = counts.get("sponsored_clicked", 0)
+        
+        for event in events:
+            event_type = event.get("event_type") or event.get("event")
+            if event_type == "impression_logged":
+                impressions += 1
+                payload = event.get("payload", {})
+                if payload.get("placement") == "sponsored":
+                    sponsored_impressions += 1
+        
+        # Calculate CTR (sponsored clicks / sponsored impressions)
+        ctr = (sponsored_clicks / sponsored_impressions * 100) if sponsored_impressions > 0 else 0.0
     else:
         unique_sessions = 0
+        impressions = 0
+        sponsored_impressions = 0
+        sponsored_clicks = 0
+        ctr = 0.0
 except Exception:
     unique_sessions = 0
+    impressions = 0
+    sponsored_impressions = 0
+    sponsored_clicks = 0
+    ctr = 0.0
 
+# KPI row with ads metrics
 kpi_row([
     {"label": "Total events", "value": total_events, "icon": "📊"},
     {"label": "Searches", "value": searches, "icon": "🔍"},
     {"label": "Cart adds", "value": cart_adds, "icon": "🛒"},
-    {"label": "Exports", "value": exports, "icon": "📥"},
+    {"label": "Impressions", "value": impressions, "icon": "👁️"},
 ])
+
+# Ads metrics row (sponsored performance)
+if impressions > 0 or sponsored_clicks > 0:
+    st.markdown("#### Ads performance")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Sponsored impressions", sponsored_impressions)
+    with col2:
+        st.metric("Sponsored clicks", sponsored_clicks)
+    with col3:
+        st.metric("CTR", f"{ctr:.2f}%", delta=f"{sponsored_clicks}/{sponsored_impressions}" if sponsored_impressions > 0 else None)
 
 # B) Funnel chart (Search → Add → Export)
 section("User journey funnel")
 
-with card():
-    funnel_steps = [
-        ("Search performed", searches),
-        ("Item added to cart", cart_adds),
-        ("List exported", exports),
-    ]
-    funnel_chart = build_funnel(funnel_steps)
-    st.altair_chart(funnel_chart, use_container_width=True)
+col_funnel, col_ctr = st.columns([3, 1])
+with col_funnel:
+    with card():
+        funnel_steps = [
+            ("Search performed", searches),
+            ("Item added to cart", cart_adds),
+            ("List exported", exports),
+        ]
+        funnel_chart = build_funnel(funnel_steps)
+        st.altair_chart(funnel_chart, use_container_width=True)
+
+# Sponsored CTR mini-metric (optional, only if we have sponsored data)
+with col_ctr:
+    if sponsored_impressions > 0:
+        with card():
+            st.metric("Sponsored CTR", f"{ctr:.2f}%")
+            st.caption(f"{sponsored_clicks} clicks / {sponsored_impressions} impressions")
 
 # C) Activity over time
 section("Activity over time")

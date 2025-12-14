@@ -35,6 +35,15 @@ from ui.style import render_footer  # Keep footer function
 from ui.style import pill_tag  # Keep pill_tag helper
 from ui.feedback import show_error, show_empty_state, working_spinner
 
+# Import event logging for ads-ready analytics
+try:
+    from aggregator.events import log_impression, log_sponsored_click, log_cart_items_added
+except ImportError:
+    # Fallback if aggregator not in path (shouldn't happen but be safe)
+    def log_impression(*args, **kwargs): pass
+    def log_sponsored_click(*args, **kwargs): pass
+    def log_cart_items_added(*args, **kwargs): pass
+
 # Inject global CSS styling
 load_global_styles()
 
@@ -272,6 +281,8 @@ if submitted or has_stored_results:
         max_deals=3,
     )
     
+    # Track sponsored item IDs for placement attribution
+    sponsored_item_ids = set()
     if sponsored_deals:
         st.markdown("### ⭐ Sponsored deals")
         st.caption(
@@ -281,8 +292,30 @@ if submitted or has_stored_results:
         
         # Render sponsored cards in columns
         cols = st.columns(len(sponsored_deals))
-        for col, deal in zip(cols, sponsored_deals):
+        for idx, (col, deal) in enumerate(zip(cols, sponsored_deals)):
             with col:
+                # Track sponsored item for placement attribution
+                if hasattr(deal, 'product_id'):
+                    sponsored_item_ids.add(f"{deal.retailer}:{deal.product_id}")
+                elif hasattr(deal, 'id'):
+                    sponsored_item_ids.add(str(deal.id))
+                
+                # Log impression for sponsored placement
+                try:
+                    log_impression(
+                        session_id=session_id,
+                        surface="sponsored_block",
+                        placement="sponsored",
+                        item_id=getattr(deal, 'product_id', None) or getattr(deal, 'id', None),
+                        product_name=getattr(deal, 'title', None),
+                        retailer=deal.retailer if hasattr(deal, 'retailer') else None,
+                        rank=idx + 1,
+                        query=query if query else None,
+                        campaign_id="demo-sponsored-1"
+                    )
+                except Exception:
+                    pass  # Never crash on analytics
+                
                 with st.container(border=True):
                     st.markdown("**⭐ Sponsored**")
                     st.markdown(f"**{deal.title}**")
@@ -294,18 +327,38 @@ if submitted or has_stored_results:
                     st.caption(f"🛒 {retailer_label}")
                     
                     if deal.product_url:
-                        st.link_button(
+                        # Track sponsored click on link button click
+                        clicked = st.link_button(
                             "View product",
                             url=deal.product_url,
                             width='stretch',
+                            key=f"sponsored_link_{deal.id}",
                         )
+                        # Note: st.link_button doesn't return click state in Streamlit,
+                        # but we track clicks via actual product interactions instead
                     else:
-                        st.button(
+                        if st.button(
                             "View product",
                             disabled=True,
                             width='stretch',
                             key=f"sponsored_{deal.id}",
-                        )
+                        ):
+                            # Track sponsored click
+                            try:
+                                log_sponsored_click(
+                                    session_id=session_id,
+                                    surface="sponsored_block",
+                                    campaign_id="demo-sponsored-1",
+                                    item_id=getattr(deal, 'product_id', None) or getattr(deal, 'id', None),
+                                    product_name=getattr(deal, 'title', None),
+                                    retailer=deal.retailer if hasattr(deal, 'retailer') else None,
+                                    query=query if query else None,
+                                )
+                            except Exception:
+                                pass  # Never crash on analytics
+        
+        # Store sponsored item IDs in session_state for placement tracking
+        st.session_state["search_sponsored_item_ids"] = sponsored_item_ids
     
     # Check for problematic connectors (non-ok status for selected retailers)
     problematic = {}
@@ -404,6 +457,32 @@ if submitted or has_stored_results:
                     lambda row: f"{row.get('retailer', '')}:{row.get('id', '')}", 
                     axis=1
                 )
+        
+        # Log impressions for top 10 organic results (ads-ready analytics)
+        # Dedupe by tracking in session_state to avoid logging same impressions on rerun
+        impression_key = f"impressions_logged_{query}_{len(products)}"
+        if impression_key not in st.session_state:
+            try:
+                sponsored_ids = st.session_state.get("search_sponsored_item_ids", set())
+                top_n = min(10, len(unified_df))
+                for idx in range(top_n):
+                    row = unified_df.iloc[idx]
+                    item_id = row.get("product_id") or f"{row.get('retailer', '')}:{row.get('id', '')}"
+                    # Skip if this is a sponsored item (handled separately)
+                    if item_id not in sponsored_ids:
+                        log_impression(
+                            session_id=session_id,
+                            surface="search_results",
+                            placement="organic",
+                            item_id=item_id,
+                            product_name=row.get("name"),
+                            retailer=row.get("retailer"),
+                            rank=idx + 1,
+                            query=query if query else None,
+                        )
+                st.session_state[impression_key] = True
+            except Exception:
+                pass  # Never crash on analytics
             elif "id" in unified_df.columns:
                 unified_df["product_id"] = unified_df["id"]
         
@@ -623,6 +702,12 @@ if submitted or has_stored_results:
                     if st.button("➕", key=f"add_btn_{idx}", use_container_width=True):
                         product_id_clean = str(prod_id).split(":")[-1] if ":" in str(prod_id) else str(prod_id)
                         
+                        # Determine placement and campaign_id for ads analytics
+                        sponsored_ids = st.session_state.get("search_sponsored_item_ids", set())
+                        is_sponsored = prod_id in sponsored_ids
+                        placement = "sponsored" if is_sponsored else "organic"
+                        campaign_id = "demo-sponsored-1" if is_sponsored else None
+                        
                         result = add_to_cart_backend(
                             session_id=session_id,
                             retailer=retailer,
@@ -635,6 +720,31 @@ if submitted or has_stored_results:
                         )
                         
                         if result is not None:
+                            # Log cart addition with placement tracking (ads-ready analytics)
+                            try:
+                                log_cart_items_added(
+                                    session_id=session_id,
+                                    retailer=retailer,
+                                    count=1,
+                                    item_ids=[prod_id] if prod_id else None,
+                                    placement=placement,
+                                    campaign_id=campaign_id,
+                                    surface="search_results",
+                                )
+                                # If sponsored, also log sponsored click
+                                if is_sponsored:
+                                    log_sponsored_click(
+                                        session_id=session_id,
+                                        surface="search_results",
+                                        campaign_id=campaign_id,
+                                        item_id=prod_id,
+                                        product_name=matching_product.get("name"),
+                                        retailer=retailer,
+                                        query=query if query else None,
+                                    )
+                            except Exception:
+                                pass  # Never crash on analytics
+                            
                             st.toast("✅ Added to basket", icon="✅")
                             # Store results in session_state to prevent rerun from clearing them
                             if "search_results" not in st.session_state:

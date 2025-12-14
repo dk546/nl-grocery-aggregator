@@ -151,114 +151,120 @@ def pick_best_product_for_ingredient(
         return None
 
 
-def handle_add_recipe_to_basket(recipe: recipes_data.Recipe, session_id: str) -> None:
+def handle_add_recipe_to_basket(recipe: recipes_data.Recipe, session_id: str) -> Dict[str, Any]:
     """
     Add all recipe ingredients to the basket by finding the best products for each.
     
     Args:
         recipe: Recipe object with ingredients list
         session_id: Session ID for basket operations
+    
+    Returns:
+        Dict with keys:
+            - added_count: int (always >= 0)
+            - missing: list[str] (ingredients that couldn't be matched)
+            - errors: list[str] (errors that occurred during addition)
+            - timed_out: bool (whether backend timed out)
     """
     ingredients: List[str] = recipe.ingredients
     
+    # Initialize result object with safe defaults
+    result: Dict[str, Any] = {
+        "added_count": 0,
+        "missing": [],
+        "errors": [],
+        "timed_out": False,
+    }
+    
     if not ingredients:
-        st.warning("This recipe doesn't have a structured ingredient list yet.")
-        return
+        return result
     
     missing: List[str] = []
     chosen_products: List[Dict[str, Any]] = []
     
-    with working_spinner("Working…"):
-        for ingredient in ingredients:
-            # Clean ingredient string (remove parenthetical notes like "(optional)")
-            clean_ingredient = ingredient.split("(")[0].strip()
-            
-            best = pick_best_product_for_ingredient(clean_ingredient)
-            
-            if best is None:
-                missing.append(ingredient)
-            else:
-                # Extract product_id (may be in format "retailer:id" or just "id")
-                product_id = best.get("id", "")
-                retailer = best.get("retailer", "")
+    try:
+        with working_spinner("Working…"):
+            for ingredient in ingredients:
+                # Clean ingredient string (remove parenthetical notes like "(optional)")
+                clean_ingredient = ingredient.split("(")[0].strip()
                 
-                # Handle product_id format - backend expects just the ID part
-                if ":" in product_id:
-                    product_id_clean = product_id.split(":")[-1]
-                else:
-                    product_id_clean = product_id
-                
-                # Map best product into the basket item payload
-                chosen_products.append({
-                    "product": best,
-                    "product_id": product_id_clean,
-                    "retailer": retailer,
-                    "name": best.get("name", ""),
-                    "price_eur": best.get("price_eur") or best.get("price", 0.0),
-                    "image_url": best.get("image_url"),
-                    "health_tag": best.get("health_tag"),
-                })
-        
-        # Add each product to basket individually
-        if chosen_products:
-            added_count = 0
-            failed_count = 0
-            
-            for product_data in chosen_products:
                 try:
-                    result = add_to_cart_backend(
-                        session_id=session_id,
-                        retailer=product_data["retailer"],
-                        product_id=product_data["product_id"],
-                        name=product_data["name"],
-                        price_eur=product_data["price_eur"],
-                        quantity=1,
-                        image_url=product_data.get("image_url"),
-                        health_tag=product_data.get("health_tag"),
-                    )
+                    best = pick_best_product_for_ingredient(clean_ingredient)
                     
-                    if result is not None:
-                        added_count += 1
+                    if best is None:
+                        missing.append(ingredient)
                     else:
-                        failed_count += 1
+                        # Extract product_id (may be in format "retailer:id" or just "id")
+                        product_id = best.get("id", "")
+                        retailer = best.get("retailer", "")
                         
-                except Exception:
-                    failed_count += 1
+                        # Handle product_id format - backend expects just the ID part
+                        if ":" in product_id:
+                            product_id_clean = product_id.split(":")[-1]
+                        else:
+                            product_id_clean = product_id
+                        
+                        # Map best product into the basket item payload
+                        chosen_products.append({
+                            "product": best,
+                            "product_id": product_id_clean,
+                            "retailer": retailer,
+                            "name": best.get("name", ""),
+                            "price_eur": best.get("price_eur") or best.get("price", 0.0),
+                            "image_url": best.get("image_url"),
+                            "health_tag": best.get("health_tag"),
+                        })
+                except Exception as e:
+                    # Best-effort: if ingredient lookup fails, mark as missing
+                    missing.append(ingredient)
+                    result["errors"].append(f"Failed to search for '{ingredient}': {str(e)}")
+            
+            # Add each product to basket individually
+            if chosen_products:
+                added_count = 0
+                
+                for product_data in chosen_products:
+                    try:
+                        result_add = add_to_cart_backend(
+                            session_id=session_id,
+                            retailer=product_data["retailer"],
+                            product_id=product_data["product_id"],
+                            name=product_data["name"],
+                            price_eur=product_data["price_eur"],
+                            quantity=1,
+                            image_url=product_data.get("image_url"),
+                            health_tag=product_data.get("health_tag"),
+                        )
+                        
+                        if result_add is not None:
+                            added_count += 1
+                        else:
+                            result["errors"].append(f"Failed to add {product_data['name']} to basket")
+                            
+                    except TimeoutError:
+                        result["timed_out"] = True
+                        result["errors"].append(f"Timeout adding {product_data['name']} to basket")
+                    except Exception as e:
+                        result["errors"].append(f"Error adding {product_data['name']}: {str(e)}")
+                
+                # Normalize added_count to int (safety check)
+                result["added_count"] = int(added_count) if isinstance(added_count, (int, float)) else 0
+            else:
+                result["added_count"] = 0
+                
+    except TimeoutError:
+        result["timed_out"] = True
+        result["errors"].append("Request timed out while processing ingredients")
+    except Exception as e:
+        result["errors"].append(f"Unexpected error: {str(e)}")
     
-    # Success / partial-success messaging
-    found_count = len(chosen_products)
-    total_ingredients = len(ingredients)
+    # Store missing ingredients
+    result["missing"] = missing
     
-    if found_count == 0:
-        st.warning(
-            "❌ None of the ingredients could be matched to supermarket products yet. "
-            "Try a different recipe or check back later."
-        )
-        return
+    # Normalize added_count one more time as final safeguard
+    result["added_count"] = int(result["added_count"] or 0)
     
-    if missing:
-        st.success(
-            f"✅ Added {found_count} product(s) for **'{recipe.title}'**. "
-            f"Could not find matches for: {', '.join(missing[:5])}"
-            + (f" (and {len(missing) - 5} more)" if len(missing) > 5 else "")
-        )
-    else:
-        st.success(
-            f"✅ Added all {found_count} ingredient(s) for **'{recipe.title}'** to your basket!"
-        )
-    
-    # Show caption suggesting to check My Basket
-    st.caption("💡 Check **My Basket** in the sidebar to review your items.")
-    
-    # Offer link to view basket
-    col1, col2 = st.columns([3, 1])
-    with col2:
-        try:
-            st.page_link("pages/03_🧺_My_Basket.py", label="🧺 View My Basket", icon="🧺")
-        except (AttributeError, TypeError):
-            # Fallback for older Streamlit versions
-            if st.button("🧺 View My Basket", key=f"view_basket_{recipe.id}", width='stretch'):
-                st.switch_page("pages/03_🧺_My_Basket.py")
+    return result
 
 
 # Inject global CSS styling
@@ -455,12 +461,74 @@ def render_recipe_card(recipe: Recipe, profile, session_id: str) -> None:
         # Add ingredients button
         if st.button("Add ingredients", key=f"add_ing_{recipe.id}", use_container_width=True):
             # Handle adding ingredients to basket
-            added_count = handle_add_recipe_to_basket(recipe, session_id)
+            result = handle_add_recipe_to_basket(recipe, session_id)
+            
+            # Safely extract and normalize added_count
+            added_count = int(result.get("added_count", 0) or 0)
+            missing = result.get("missing", [])
+            errors = result.get("errors", [])
+            timed_out = result.get("timed_out", False)
+            
+            # UI feedback logic
             if added_count > 0:
-                st.toast("✅ Added to basket", icon="✅")
-                st.rerun()
+                # Success or partial success
+                if missing:
+                    # Partial success with missing ingredients
+                    missing_msg = ", ".join(missing[:3])
+                    if len(missing) > 3:
+                        missing_msg += f" (and {len(missing) - 3} more)"
+                    st.success(
+                        f"✅ Added {added_count} product(s) for **'{recipe.title}'**. "
+                        f"Could not find matches for: {missing_msg}"
+                    )
+                    if timed_out:
+                        st.info("⚠️ Some operations may have timed out. Check your basket.")
+                else:
+                    # Full success
+                    if timed_out:
+                        st.success(
+                            f"✅ Added {added_count} product(s) for **'{recipe.title}'** to your basket!"
+                        )
+                        st.info("⚠️ Request completed but may have timed out partially. Check your basket.")
+                    else:
+                        st.success(
+                            f"✅ Added all {added_count} ingredient(s) for **'{recipe.title}'** to your basket!"
+                        )
+                
+                # Show caption suggesting to check My Basket
+                st.caption("💡 Check **My Basket** in the sidebar to review your items.")
+                
+                # Offer link to view basket
+                col1, col2 = st.columns([3, 1])
+                with col2:
+                    try:
+                        st.page_link("pages/03_🧺_My_Basket.py", label="🧺 View My Basket", icon="🧺")
+                    except (AttributeError, TypeError):
+                        # Fallback for older Streamlit versions
+                        if st.button("🧺 View My Basket", key=f"view_basket_{recipe.id}", use_container_width=True):
+                            st.switch_page("pages/03_🧺_My_Basket.py")
+                
             else:
-                st.toast("⚠️ Error", icon="⚠️")
+                # No items added
+                if timed_out:
+                    st.error(
+                        "❌ Request timed out. None of the ingredients could be added. "
+                        "Please try again or check your connection."
+                    )
+                elif missing and len(missing) == len(recipe.ingredients):
+                    st.warning(
+                        "❌ None of the ingredients could be matched to supermarket products yet. "
+                        "Try a different recipe or check back later."
+                    )
+                elif errors:
+                    error_msg = "; ".join(errors[:2])
+                    if len(errors) > 2:
+                        error_msg += f" (and {len(errors) - 2} more errors)"
+                    st.error(f"❌ Could not add ingredients. {error_msg}")
+                else:
+                    st.warning("❌ Could not add ingredients. Please try again.")
+            
+            st.rerun()
         
         # Details expander (serves as "View" functionality - always available, collapsed by default)
         with st.expander("View ingredients & steps", expanded=False):

@@ -2,6 +2,12 @@
 
 A full-stack application that aggregates grocery product search results from multiple Dutch supermarkets (Albert Heijn, Jumbo, Picnic, and Dirk). The project includes a FastAPI backend service and a modern Streamlit web frontend with card-based layouts, hero images, and a consistent brand design, providing a unified interface to search, compare, and manage shopping carts across retailers.
 
+## Live Demo
+
+👉 https://nl-grocery-aggregator-frontend.onrender.com
+
+> ⚠️ This is a demo application. Prices, availability, and health insights are illustrative.
+
 ## Features
 
 ### Backend (FastAPI)

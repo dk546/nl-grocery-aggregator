@@ -134,6 +134,9 @@ def log_cart_items_added(
     retailer: str,
     count: int,
     item_ids: Optional[List[str]] = None,
+    placement: Optional[str] = None,
+    campaign_id: Optional[str] = None,
+    surface: Optional[str] = None,
 ) -> None:
     """
     Log a cart_item_added event.
@@ -142,15 +145,24 @@ def log_cart_items_added(
     {
         "retailer": "ah",
         "count": 3,
-        "item_ids": ["sku1", "sku2", ...]  # optional
+        "item_ids": ["sku1", "sku2", ...],  # optional
+        "placement": "organic" | "sponsored",  # optional (new)
+        "campaign_id": str,  # optional (new)
+        "surface": "search_results" | "recipes" | ...  # optional (new)
     }
     """
-    payload = {
+    payload: Dict[str, Any] = {
         "retailer": retailer,
         "count": count,
     }
     if item_ids is not None:
         payload["item_ids"] = item_ids
+    if placement is not None:
+        payload["placement"] = placement
+    if campaign_id is not None:
+        payload["campaign_id"] = campaign_id
+    if surface is not None:
+        payload["surface"] = surface
 
     log_event("cart_item_added", session_id, payload)
 
@@ -385,3 +397,113 @@ def log_checkout_mock_started(session_id: Optional[str], retailer: str) -> None:
         "retailer": retailer,
     }
     log_event("checkout_mock_started", session_id, payload)
+
+
+def log_impression(
+    session_id: Optional[str],
+    surface: str,
+    placement: str,
+    item_id: Optional[str] = None,
+    product_name: Optional[str] = None,
+    retailer: Optional[str] = None,
+    rank: Optional[int] = None,
+    query: Optional[str] = None,
+    campaign_id: Optional[str] = None,
+) -> None:
+    """
+    Log an impression_logged event (ads-ready analytics).
+
+    Args:
+        session_id: Session identifier
+        surface: Where the item was shown ("search_results", "sponsored_block", etc.)
+        placement: "organic" or "sponsored"
+        item_id: Product/item identifier (optional)
+        product_name: Product name (optional)
+        retailer: Retailer code (optional)
+        rank: Position/rank in results (1-indexed, optional)
+        query: Search query if applicable (optional)
+        campaign_id: Campaign identifier for sponsored placements (optional)
+
+    payload:
+    {
+        "surface": "search_results" | "sponsored_block",
+        "placement": "organic" | "sponsored",
+        "item_id": str | None,
+        "product_name": str | None,
+        "retailer": str | None,
+        "rank": int | None,
+        "query": str | None,
+        "campaign_id": str | None
+    }
+    """
+    payload: Dict[str, Any] = {
+        "surface": surface,
+        "placement": placement,
+    }
+    if item_id is not None:
+        payload["item_id"] = item_id
+    if product_name is not None:
+        payload["product_name"] = product_name
+    if retailer is not None:
+        payload["retailer"] = retailer
+    if rank is not None:
+        payload["rank"] = rank
+    if query is not None:
+        payload["query"] = query
+    if campaign_id is not None:
+        payload["campaign_id"] = campaign_id
+
+    log_event("impression_logged", session_id, payload)
+
+
+def log_sponsored_click(
+    session_id: Optional[str],
+    surface: str,
+    campaign_id: Optional[str] = None,
+    item_id: Optional[str] = None,
+    product_name: Optional[str] = None,
+    retailer: Optional[str] = None,
+    rank: Optional[int] = None,
+    query: Optional[str] = None,
+) -> None:
+    """
+    Log a sponsored_clicked event (ads-ready analytics).
+
+    Args:
+        session_id: Session identifier
+        surface: Where the click occurred ("search_results", "sponsored_block", etc.)
+        campaign_id: Campaign identifier (optional)
+        item_id: Product/item identifier (optional)
+        product_name: Product name (optional)
+        retailer: Retailer code (optional)
+        rank: Position/rank in results (optional)
+        query: Search query if applicable (optional)
+
+    payload:
+    {
+        "surface": "search_results" | "sponsored_block",
+        "campaign_id": str | None,
+        "item_id": str | None,
+        "product_name": str | None,
+        "retailer": str | None,
+        "rank": int | None,
+        "query": str | None
+    }
+    """
+    payload: Dict[str, Any] = {
+        "surface": surface,
+    }
+    if campaign_id is not None:
+        payload["campaign_id"] = campaign_id
+    if item_id is not None:
+        payload["item_id"] = item_id
+    if product_name is not None:
+        payload["product_name"] = product_name
+    if retailer is not None:
+        payload["retailer"] = retailer
+    if rank is not None:
+        payload["rank"] = rank
+    if query is not None:
+        payload["query"] = query
+
+    log_event("sponsored_clicked", session_id, payload)
