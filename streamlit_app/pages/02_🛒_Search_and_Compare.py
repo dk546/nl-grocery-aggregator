@@ -327,15 +327,12 @@ if submitted or has_stored_results:
                     st.caption(f"🛒 {retailer_label}")
                     
                     if deal.product_url:
-                        # Track sponsored click on link button click
-                        clicked = st.link_button(
-                            "View product",
-                            url=deal.product_url,
-                            width='stretch',
-                            key=f"sponsored_link_{deal.id}",
+                        # Use markdown link for version compatibility (st.link_button doesn't support key=)
+                        # Style it to look like a Streamlit button
+                        st.markdown(
+                            f'<a href="{deal.product_url}" target="_blank" style="display: block; text-align: center; padding: 0.5rem 1rem; background-color: #FF4B4B; color: white; text-decoration: none; border-radius: 0.25rem; font-weight: 500; width: 100%; box-sizing: border-box;">View product</a>',
+                            unsafe_allow_html=True
                         )
-                        # Note: st.link_button doesn't return click state in Streamlit,
-                        # but we track clicks via actual product interactions instead
                     else:
                         if st.button(
                             "View product",
