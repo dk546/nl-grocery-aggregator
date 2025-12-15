@@ -451,12 +451,16 @@ if submitted or has_stored_results:
         # Do this BEFORE formatting retailer column, as we need original retailer code for product_id
         # Always format as "retailer:id" for consistency with basket_item_ids format
         if "product_id" not in unified_df.columns:
+            # Use helper pattern to safely select ID column
             if "id" in unified_df.columns and "retailer" in unified_df.columns:
                 # Create product_id from retailer + id (using original retailer code)
                 unified_df["product_id"] = unified_df.apply(
                     lambda row: f"{row.get('retailer', '')}:{row.get('id', '')}", 
                     axis=1
                 )
+            elif "id" in unified_df.columns:
+                # Fallback: just use "id" if retailer not available
+                unified_df["product_id"] = unified_df["id"]
         
         # Log impressions for top 10 organic results (ads-ready analytics)
         # Dedupe by tracking in session_state to avoid logging same impressions on rerun
@@ -483,8 +487,6 @@ if submitted or has_stored_results:
                 st.session_state[impression_key] = True
             except Exception:
                 pass  # Never crash on analytics
-            elif "id" in unified_df.columns:
-                unified_df["product_id"] = unified_df["id"]
         
         # Format retailer column to use display names (for display only)
         if "retailer" in unified_df.columns:
