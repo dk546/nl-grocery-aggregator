@@ -1,12 +1,42 @@
 # NL Grocery Aggregator
 
-A full-stack application that aggregates grocery product search results from multiple Dutch supermarkets (Albert Heijn, Jumbo, Picnic, and Dirk). The project includes a FastAPI backend service and a modern Streamlit web frontend with card-based layouts, hero images, and a consistent brand design, providing a unified interface to search, compare, and manage shopping carts across retailers.
+A full-stack application that aggregates grocery product search results from multiple Dutch supermarkets (Albert Heijn, Jumbo, Picnic, and Dirk). This repository contains the **FastAPI backend service** and a **Streamlit pilot/demo UI**. The production mobile UI is developed in a separate private repository.
 
 ## Live Demo
 
-👉 https://nl-grocery-aggregator-frontend.onrender.com
+👉 **Streamlit Pilot UI**: https://nl-grocery-aggregator-frontend.onrender.com
 
 > ⚠️ This is a demo application. Prices, availability, and health insights are illustrative.
+
+## Table of Contents
+
+- [Repositories](#repositories)
+- [Features](#features)
+- [Mobile UI (Production)](#mobile-ui-production)
+- [Integration Contract](#integration-contract)
+- [Project Structure](#project-structure)
+- [Local Development](#local-development)
+- [API Endpoints](#api-endpoints)
+- [Production Deployment](#production-deployment)
+- [Running Tests](#running-tests)
+- [Architecture Notes](#architecture-notes)
+- [Limitations](#limitations)
+
+## Repositories
+
+This project consists of **two repositories**:
+
+### 1. `nl-grocery-aggregator` (This Repository - Public)
+- **FastAPI Backend**: REST API for product search, cart management, analytics, and more
+- **Streamlit Pilot UI**: Internal/demo interface for testing and development
+- **Deployment**: `render.yaml` configuration for Render.com deployment
+- **Status**: Source of truth for backend API and pilot UI
+
+### 2. `smartbite-mobile-ui` (Private Repository)
+- **Repository**: https://github.com/dk546/smartbite-mobile-ui
+- **Tech Stack**: Vite + React + TypeScript
+- **Status**: Production direction, exported from Google Stitch/AI Studio
+- **Integration**: Consumes backend API from this repository
 
 ## Features
 
@@ -31,60 +61,89 @@ A full-stack application that aggregates grocery product search results from mul
 - **Health Check Endpoint**: `/health` endpoint for monitoring and status checks with uptime information
 - **RESTful API**: Clean FastAPI endpoints with automatic OpenAPI documentation
 
-### Frontend (Streamlit)
-- **Modern UI System**: Modular UI architecture with reusable components
-  - `ui/layout.py`: Page headers, KPI rows, sections, and card containers
-  - `ui/styles.py`: Global CSS styling with tightened spacing and consistent design
-  - `ui/feedback.py`: Standardized error, empty state, and loading utilities
+### Pilot UI (Streamlit - Internal/Demo)
+The Streamlit interface serves as a **pilot/demo/internal tool** for testing backend functionality. It includes:
+
 - **Search & Compare**: Interactive product search with filters, health tags, and price comparison
-  - Modern minimalist header with basket quick access
-  - Compact product comparison table with inline add buttons
-  - Standardized error and empty states
-  - Safe caching for search results
-- **My Basket**: Comprehensive shopping cart management with:
-  - Dashboard-style layout with KPI metrics row
-  - **Primary Action Bar**: Health check, Find savings, Export list buttons
-  - Quantity updates and item removal
-  - **Smart Suggestions**: Automatic suggestions for cheaper or healthier alternatives (up to 3 shown)
-  - **Savings Finder**: Find cheaper alternatives for items in your basket
-  - **Export List**: Export shopping list as .txt or .csv with improved UX flow
-  - **Saved Baskets/Templates**: Save current basket as a template and reuse it later
-  - Retailer totals breakdown
-  - Session persistence across pages
-- **Health Insights**: Minimalist dashboard for basket health analytics
-  - Modern header with basket quick access
-  - KPI metrics row (Health score, % healthy, Items to improve, Variety)
-  - Primary visual: Donut chart with percentage labels showing basket composition
-  - Key takeaways card with 3 actionable insights
-  - Top categories stacked bar chart (conditional)
-  - Health-based swap suggestions in expander
-  - Safe caching for health aggregates computation
-- **Recipes**: Modern recipe collection with compact card grid
-  - Modern header with basket quick access
-  - Compact recipe cards with title, summary, tags, and action buttons
-  - "Add ingredients" button for one-click basket addition
-  - Expandable details (ingredients & steps) for each recipe
-  - Filters on left, 3-column recipe grid on right
-  - Safe caching for recipe filtering (5-minute TTL)
-  - Standardized empty states
-- **Analytics Dashboard** (Internal): Internal analytics dashboard for event visualization
-  - Event counts visualization with bar charts
-  - Summary metrics row (total events, searches, cart adds, swaps)
-  - Recent events table with event type filtering
-  - CSV download for recent events
-  - Time window selection (6 hours to 7 days)
-  - Gracefully handles database disabled state
-  - Shows backend and database status
-  - "Last updated" timestamp
-- **System Status**: Backend health monitoring and API documentation links
-  - Demo controls expander: Reset session, Load demo basket, Clear cache
-  - Backend and database status monitoring
-- **Consistent UX**: 
-  - Basket quick access button in page headers (Search, Health Insights, Recipes)
-  - Standardized button labels across all pages
-  - Consistent error/empty/loading states
-  - Tightened spacing for modern, compact feel
-  - No decorative images (clean, focused design)
+- **My Basket**: Shopping cart management with savings finder and smart suggestions
+- **Health Insights**: Basket health analytics dashboard
+- **Recipes**: Recipe collection with ingredient management
+- **Analytics Dashboard**: Internal analytics visualization (demo/internal use only)
+- **System Status**: Backend health monitoring and API documentation
+
+> **Note**: The Streamlit UI is for internal use and demo purposes. The mobile UI in `smartbite-mobile-ui` is the production direction.
+
+## Mobile UI (Production)
+
+The production mobile UI is built with Vite + React + TypeScript in the separate `smartbite-mobile-ui` repository (private). This is the **production direction**, while the Streamlit UI serves as an internal demo/pilot tool.
+
+#### Local Development
+
+1. **Clone the repository** (private):
+   ```bash
+   git clone <smartbite-mobile-ui-repo-url>
+   cd smartbite-mobile-ui
+   ```
+
+2. **Install dependencies**:
+   ```bash
+   npm install
+   ```
+
+3. **Configure environment variables**:
+   Create a `.env` file:
+   ```env
+   VITE_API_BASE_URL=http://localhost:8000
+   ```
+   > Replace with your backend URL in production (e.g., `https://nl-grocery-aggregator.onrender.com`)
+
+4. **Start development server**:
+   ```bash
+   npm run dev
+   ```
+
+   The app will be available at `http://localhost:5173` (or another port if 5173 is busy).
+
+#### Production Deployment (Render Static Site)
+
+1. **Build Configuration**:
+   - **Build Command**: `npm ci && npm run build`
+   - **Publish Directory**: `dist`
+   - **Environment Variable**: `VITE_API_BASE_URL=https://your-backend-url.onrender.com`
+
+2. **Deployment Steps**:
+   - Connect the `smartbite-mobile-ui` repository to Render
+   - Select "Static Site" service type
+   - Configure build and publish settings as above
+   - Set `VITE_API_BASE_URL` to point to your backend service
+   - Deploy!
+
+> **Note**: The mobile UI builds at deploy time, so the `VITE_API_BASE_URL` environment variable must be set in Render's dashboard before building.
+
+## Integration Contract
+
+The mobile UI (`smartbite-mobile-ui`) consumes the backend API from this repository. This section defines the integration contract between frontend and backend.
+
+### Phase 1: Product Discovery (Current)
+- **Primary Endpoint**: `GET /search`
+  - Parameters: `q` (query), `retailers`, `size`, `page`, `sort_by`, `health_filter`
+
+### Future Phases (Planned)
+The following endpoints will be integrated in later phases:
+- **Cart Management**: `POST /cart/add`, `POST /cart/remove`, `GET /cart/view`
+- **Savings Analysis**: `GET /basket/savings`
+- **Analytics**: `GET /analytics/events/recent`, `GET /analytics/events/counts`
+- **Delivery**: `GET /delivery/slots`
+- **Health Check**: `GET /health`
+
+### Security Requirements
+
+> ⚠️ **Important**: Security must be enforced at the API boundary.
+
+- **No Secrets in Frontend**: All API keys, tokens, and sensitive credentials must be handled server-side only. Never expose secrets to the frontend.
+- **AI/LLM Keys**: Any AI/LLM API keys (e.g., OpenAI, Anthropic) must remain on the backend and be exposed via backend endpoints only. Never call AI/LLM APIs directly from the frontend.
+- **CORS Configuration**: Backend must configure CORS appropriately for the mobile UI domain.
+- **Session Management**: Frontend must use session IDs or tokens as required by backend endpoints.
 
 ## Project Structure
 
@@ -104,7 +163,7 @@ nl-grocery-aggregator/
 │   ├── savings.py          # Savings finder logic
 │   ├── templates.py        # Saved basket templates
 │   ├── events.py           # Event logging utility (DB + file fallback)
-│   ├── db.py               # Database layer (Postgres persistence for carts, price history, events)
+│   ├── db.py               # Database layer (Postgres persistence)
 │   └── utils/              # Utility modules
 │       ├── cache.py        # TTL cache for search results
 │       └── units.py        # Unit normalization helpers
@@ -115,41 +174,20 @@ nl-grocery-aggregator/
 │   └── routers/            # API routers
 │       ├── __init__.py
 │       └── analytics.py    # Analytics endpoints router
-├── streamlit_app/          # Streamlit frontend application
+├── streamlit_app/          # Streamlit pilot UI application
 │   ├── app.py              # Main Streamlit entrypoint
 │   ├── pages/              # Multi-page Streamlit app pages
-│   │   ├── 01_🏠_Home.py
-│   │   ├── 02_🛒_Search_and_Compare.py
-│   │   ├── 03_🧺_My_Basket.py
-│   │   ├── 04_📊_Health_Insights.py
-│   │   ├── 05_🍳_Recipes.py
-│   │   ├── 06_📈_Analytics.py
-│   │   └── 99_🔧_System_Status.py
-│   ├── assets/             # Hero images and marketing assets
-│   │   └── *.jpg           # Healthy food images (Unsplash)
 │   ├── ui/                 # UI styling and components
-│   │   ├── styles.py        # Global CSS styling
-│   │   ├── layout.py        # Page headers, KPI rows, sections, cards
-│   │   ├── feedback.py      # Error, empty state, and loading utilities
-│   │   └── style.py         # Legacy footer and helper functions
-│   ├── utils/              # Frontend utilities
-│   │   ├── api_client.py   # Backend API client
-│   │   ├── session.py      # Session management
-│   │   ├── recipes_data.py # Recipe data module
-│   │   ├── retailers.py    # Retailer configuration and mappings
-│   │   ├── profile.py      # Household profile management
-│   │   ├── sponsored_data.py # Sponsored deals data
-│   │   ├── state.py        # Session state helpers
-│   │   └── ui_components.py # Reusable UI components
-│   └── theme/              # Streamlit theme configuration
+│   └── utils/              # Frontend utilities
 ├── sandbox/                # Manual testing scripts
 ├── tests/                  # Test suite
+├── render.yaml             # Render deployment configuration
 └── requirements.txt        # Python dependencies
 ```
 
 ## Local Development
 
-This guide covers running both the backend (FastAPI) and frontend (Streamlit) locally for development.
+This guide covers running the backend (FastAPI) and pilot UI (Streamlit) locally for development.
 
 ### Prerequisites
 
@@ -172,6 +210,31 @@ venv\Scripts\activate
 # On macOS/Linux:
 source venv/bin/activate
 ```
+
+### Recommended: VS Code Multi-Root Workspace
+
+To work with both repositories (`nl-grocery-aggregator` and `smartbite-mobile-ui`) simultaneously, we recommend setting up a VS Code Multi-Root Workspace. This gives Cursor (or VS Code) full context across both repos while keeping them separate.
+
+**Steps:**
+
+1. **Open VS Code/Cursor**
+2. **File → Add Folder to Workspace...**
+   - Add the `nl-grocery-aggregator` folder (this repository)
+   - Add the `smartbite-mobile-ui` folder (private repository)
+3. **File → Save Workspace As...**
+   - Save as `SmartBite.code-workspace` (or any name you prefer)
+   - Save it in a convenient location (e.g., parent directory containing both repos)
+
+**Benefits:**
+- Lets Cursor see backend schemas + frontend types while keeping repos separate
+- Full codebase context for AI assistance across both repos
+- Easy navigation between backend and frontend code
+- Unified search across both repositories
+- Separate Git histories maintained
+
+**Cursor Tip:** Use `@nl-grocery-aggregator` and `@smartbite-mobile-ui` in prompts to scope your requests to specific repositories.
+
+> **Note**: The `.code-workspace` file is optional and typically not committed to version control. Each repository maintains its own `.gitignore` and version history.
 
 ### 2. Install Dependencies
 
@@ -210,17 +273,18 @@ PICNIC_COUNTRY_CODE=NL
 
 # Backend URL (for Streamlit frontend - points to local backend by default)
 BACKEND_URL=http://localhost:8000
-# Note: On Render, set BACKEND_URL to your backend service URL (e.g., https://nl-grocery-aggregator.onrender.com)
-# Trailing slashes are automatically handled
 
-# OpenAI API Key (optional - for AI Health Coach feature in Health Insights page)
+# OpenAI API Key (optional - for AI Health Coach feature)
 OPENAI_API_KEY=your_openai_api_key_here
 
-# Database Configuration (optional - enables Postgres persistence for carts, price history, and events)
-# When set, cart data, price history, and event analytics are persisted to Postgres
-# When not set, falls back to in-memory storage (carts), JSONL files (price history, events)
+# Database Configuration (optional - enables Postgres persistence)
 DATABASE_URL=postgresql://user:password@localhost:5432/nl_grocery_aggregator
-# Example for Render: DATABASE_URL=postgresql://user:pass@dpg-xxx.oregon-postgres.render.com/dbname
+
+# CORS Configuration (optional - for frontend API access)
+# Comma-separated list of allowed origins (e.g., for mobile UI or custom frontend)
+# If not set, defaults to: http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173
+# Example: CORS_ORIGINS=http://localhost:3000,https://myapp.example.com
+CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173
 ```
 
 **Important:** 
@@ -239,9 +303,10 @@ DATABASE_URL=postgresql://user:password@localhost:5432/nl_grocery_aggregator
 | `PICNIC_USERNAME` | Yes* | - | Picnic account email/username |
 | `PICNIC_PASSWORD` | Yes* | - | Picnic account password |
 | `PICNIC_COUNTRY_CODE` | No | `NL` | Picnic country code |
-| `BACKEND_URL` | No | `http://localhost:8000` | Backend API URL (used by Streamlit frontend for all API calls, including `/health` endpoint) |
+| `BACKEND_URL` | No | `http://localhost:8000` | Backend API URL (used by Streamlit frontend) |
 | `OPENAI_API_KEY` | No | - | OpenAI API key for AI Health Coach feature (optional) |
-| `DATABASE_URL` | No | - | PostgreSQL connection string for persistent storage (carts, price history, events). When not set, uses in-memory/file-based fallback |
+| `DATABASE_URL` | No | - | PostgreSQL connection string for persistent storage |
+| `CORS_ORIGINS` | No | `http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173` | Comma-separated list of allowed CORS origins for API access (e.g., for mobile UI) |
 
 *Required only if you want to use the corresponding retailer. You can use the API with just one retailer if desired.
 
@@ -262,7 +327,7 @@ The API will be available at:
 
 **Note:** The `api.config` module automatically loads `.env` when `api.main` is imported, so all environment variables will be available to connectors.
 
-### 5. Running the Frontend (Streamlit)
+### 5. Running the Pilot UI (Streamlit)
 
 In a **separate terminal** (with the same virtual environment activated):
 
@@ -284,7 +349,7 @@ The Streamlit app will open in your browser at `http://localhost:8501`.
    uvicorn api.main:app --reload --port 8000
    ```
 
-2. **Start the frontend** in another terminal:
+2. **Start the Streamlit UI** in another terminal:
    ```bash
    streamlit run streamlit_app/app.py
    ```
@@ -296,46 +361,9 @@ The Streamlit app will open in your browser at `http://localhost:8501`.
    - Select all retailers (Albert Heijn, Jumbo, Picnic, Dirk)
    - Click "Search"
    - You should see product results with prices, health tags, and retailer information
-   - Select some products using the checkboxes and click "Add Selected Item(s) to Basket"
 
-4. **Test the basket flow:**
-   - Navigate to "My Basket" page
-   - Verify your selected items appear in the basket
-   - Try editing quantities or removing items
-   - The basket persists across page navigations (same session)
-   
-5. **Test Savings Finder:**
-   - With items in your basket, click "🔎 Check for savings opportunities"
-   - Review any cheaper alternatives found
-   - Apply a swap to replace an item with a cheaper alternative
-   
-6. **Test Saved Baskets/Templates:**
-   - With items in your basket, save it as a template (e.g., "Weekly groceries")
-   - Clear or modify your basket
-   - Apply the saved template to restore your original basket
-
-7. **Test Health Insights:**
-   - Navigate to "Health Insights" page
-   - View health metrics based on items in your basket
-   - See health tag distribution and spending by category
-
-8. **Test Recipes & Ideas:**
-   - Navigate to "Recipes & Ideas" page
-   - Expand a recipe to see ingredients
-   - Click "🛒 Add Ingredients to Basket"
-   - The app will automatically find the healthiest products for each ingredient
-   - Check "My Basket" to see the added items
-
-9. **Check backend logs** in the terminal where uvicorn is running:
-   - You should see structured logging output showing:
-     - Search request parameters
-     - Connector results counts (raw products from each retailer)
-     - Aggregated response size
-   
-10. **Check event logs** (optional):
-    - Events are logged to `events.log` in the project root
-    - Each line is a JSON object with event type, session_id, and payload
-    - Events include: search_performed, cart_items_added, savings_analysis_run, template_saved, etc.
+4. **Check backend logs** in the terminal where uvicorn is running:
+   - You should see structured logging output showing search request parameters, connector results counts, and aggregated response size
 
 ### Troubleshooting
 
@@ -353,185 +381,6 @@ The Streamlit app will open in your browser at `http://localhost:8501`.
 - Check backend terminal logs for connector errors
 - Verify API tokens are valid (Apify token for AH/Jumbo/Dirk, Picnic credentials)
 - Some retailers may require valid accounts/API access
-
-## Running the API Only
-
-If you only want to run the backend API without the Streamlit frontend:
-
-```bash
-uvicorn api.main:app --reload
-```
-
-The API will be available at http://127.0.0.1:8000
-
-## Frontend Features
-
-### Search & Compare
-- **Product Search**: Search across multiple retailers with a single query
-- **Modern Header**: Minimalist header with basket quick access button showing item count
-- **Advanced Filters**: Filter by retailer, health category, and sort options
-- **Compact Product Table**: Custom table layout with inline ➕ buttons for adding items
-- **Action Bar**: Shows basket count and sort order above the table
-- **Unified Comparison Table**: View all products in one table with comparison columns
-- **Add to Basket**: Inline ➕ buttons for immediate item addition with toast feedback
-- **Standardized Feedback**: Consistent error and empty states
-- **Safe Caching**: Search results cached for performance
-- **Form State Persistence**: Search filters persist when navigating between pages
-
-### My Basket
-- **Dashboard Layout**: Modern dashboard with KPI metrics row and primary action bar
-- **KPI Metrics Row**: Items count, total cost, average per item, and savings at a glance
-- **Primary Action Bar**: 
-  - Health check button (navigates to Health Insights)
-  - Find savings button (triggers savings analysis)
-  - Export list button (with improved UX flow: spinner → toast → download buttons)
-- **Export List**: Premium export experience
-  - Click "Export list" → shows spinner → toast notification
-  - Download buttons appear immediately (.txt and .csv formats)
-  - CSV includes Quantity, Item, Price columns
-- **Shopping Cart Management**: 
-  - View, manage, and remove items from your basket
-  - Edit quantities directly in the table
-  - Remove items via checkboxes or by setting quantity to 0
-  - Update basket button to apply all changes at once
-- **Smart Suggestions**:
-  - Automatically analyzes basket items to find cheaper or healthier alternatives
-  - Shows up to 3 suggestions in the side column
-  - Each suggestion displays:
-    - Icon (💶 for cheaper alternatives, 🥦 for healthier alternatives)
-    - Current item → Alternative item swap
-    - Estimated savings amount
-    - Health improvement delta (if applicable)
-  - Suggestions are computed in real-time using the same savings logic as Savings Finder
-  - Gracefully handles errors (suggestions are a nice-to-have feature)
-- **Savings Finder**:
-  - Analyze current basket items to find cheaper alternatives
-  - See potential savings amount
-  - Apply swaps with one click (replaces current item with cheaper alternative)
-  - Uses same product comparison logic as search
-- **Saved Baskets/Templates**:
-  - Save current basket as a named template (e.g., "Weekly groceries")
-  - List all saved templates with creation date and item count
-  - Apply a template to replace current basket contents
-  - Delete templates you no longer need
-  - Templates are session-based (tied to your browser session)
-- **Secondary Actions**: Weekly essentials and delivery services demo in collapsed expanders
-- **Session Persistence**: Basket persists across page navigations within the same browser session
-- **Cart Summary**: Compact summary card with key metrics and "Continue shopping" button
-- **Standardized Empty State**: Friendly empty basket card with action button
-
-### Health Insights
-- **Minimalist Dashboard**: Clean, modern dashboard design focused on key metrics
-- **Modern Header**: Header with basket quick access button
-- **KPI Metrics Row**: Health score, % healthy, Items to improve, Variety score
-- **Navigation CTAs**: "Open basket" and "Find savings" buttons
-- **Primary Visual**: Donut chart with percentage labels inside segments showing basket composition
-- **Key Takeaways Card**: 3 bullet points summarizing:
-  - Overall health assessment
-  - Main driver category
-  - One actionable improvement insight
-- **Top Categories Chart**: Stacked bar chart showing category-level health breakdown (conditional)
-- **Health-based Swap Suggestions**: Moved into "Improve this basket" expander (collapsed by default)
-- **Safe Caching**: Health aggregates computation cached (60-second TTL)
-- **Standardized Empty State**: Clean empty basket message with action button
-- **Compact Disclaimer**: One-line health insights disclaimer
-
-### Recipes
-- **Modern Recipe Grid**: Compact 3-column card grid (up to 9 recipes)
-- **Modern Header**: Header with basket quick access button
-- **Compact Recipe Cards**: Each card shows:
-  - Recipe title (bold)
-  - 1-line summary (description, truncated if > 100 chars)
-  - Tags as pills (limit 5 tags)
-  - "Add ingredients" button
-  - Expandable "View ingredients & steps" section
-- **Filters & Search**: Left sidebar with text search, meal type, and tag filters
-- **Category Chip Bar**: Quick filter buttons at the top
-- **Smart Product Selection**: Automatically finds healthiest products for recipe ingredients
-  - Prioritizes products tagged as "healthy"
-  - Falls back to cheapest option if health scores are tied
-  - Best-effort matching: adds what can be found, reports missing ingredients
-- **Safe Caching**: Recipe filtering cached (5-minute TTL, includes filter params)
-- **Standardized Empty State**: Clean "No recipes found" message
-- **Short Caption + Expander**: Concise page description with "How recipes work" expander
-
-### Analytics Dashboard
-- **Summary Metrics Row**: Total events, searches, cart adds, swaps at a glance
-- **Event Counts Visualization**: Bar chart showing event types and counts
-  - Time window selection (6, 12, 24, 48, 72, or 168 hours)
-  - Sorted by count (most frequent events first)
-  - Table view for detailed counts
-- **Recent Events Table**: View most recent analytics events
-  - Event type filtering dropdown
-  - Limit selection (50, 100, 200, or 500 events)
-  - Displays timestamp, event type, session ID, and payload
-  - Improved payload formatting (readable, truncated to 200 chars)
-  - CSV download button for recent events
-- **Last Updated Timestamp**: Dynamic timestamp showing when page data was last refreshed
-- **Database Status**: Shows backend and database connection status
-  - Clear indication when database persistence is enabled or disabled
-  - Graceful degradation with informative messages
-- **Internal Use Only**: Clearly marked as demo/experimental feature
-
-### System Status
-- **Backend Health**: Monitor backend API status and connectivity via `/health` endpoint
-  - Shows real-time backend status (online/offline)
-  - Displays API metadata, version, and uptime information
-  - Gracefully handles connection errors and timeouts
-- **API Documentation**: Quick access to API documentation
-- **System Diagnostics**: View system details and planned diagnostic features
-- **Demo Controls** (new): Collapsible expander with demo utilities
-  - **Reset session**: Clears all search results, basket, swaps, export flags, and session state
-  - **Load demo basket**: Populates basket with 4 example items (milk, bread, eggs, fruit)
-  - **Clear cache**: Clears all Streamlit cache data
-  - All actions show toast feedback
-
-### UI/UX System
-- **Modular Architecture**: Reusable UI components (`ui/layout.py`, `ui/styles.py`, `ui/feedback.py`)
-- **Consistent Styling**: 
-  - Global CSS with Nunito font and tightened spacing
-  - Consistent button styling (padding, radius, font weight)
-  - Consistent card padding across all pages
-- **Standardized Feedback**: 
-  - `show_error()` for error messages with optional hints
-  - `show_empty_state()` for empty states with action buttons
-  - `working_spinner()` context manager for loading states
-- **Basket Quick Access**: Basket button in page headers (Search, Health Insights, Recipes)
-  - Shows item count when basket has items
-  - One-click navigation to basket page
-- **Responsive Design**: Optimized layouts that work well on different screen sizes
-- **No Decorative Images**: Clean, focused design without unnecessary images
-
-### Analytics Dashboard
-- **Event Counts Visualization**: Bar chart showing event types and counts
-  - Time window selection (6, 12, 24, 48, 72, or 168 hours)
-  - Sorted by count (most frequent events first)
-  - Table view for detailed counts
-- **Recent Events Table**: View most recent analytics events
-  - Limit selection (50, 100, 200, or 500 events)
-  - Displays timestamp, event type, session ID, and payload
-  - Payload truncated for readability
-- **Database Status**: Shows backend and database connection status
-  - Clear indication when database persistence is enabled or disabled
-  - Graceful degradation with informative messages
-- **Internal Use Only**: Clearly marked as demo/experimental feature
-
-### System Status
-- **Backend Health**: Monitor backend API status and connectivity via `/health` endpoint
-  - Shows real-time backend status (online/offline) in sidebar and System Status page
-  - Displays API metadata, version, and uptime information
-  - Gracefully handles connection errors and timeouts
-- **API Documentation**: Quick access to API documentation
-- **System Diagnostics**: View system details and planned diagnostic features
-- **Footer Image**: Small marketing image at the bottom
-
-### UI/UX Features
-- **Hero Images**: Healthy food images from `streamlit_app/assets/` displayed across pages
-- **Image Cards**: Smaller marketing-style images in side columns and cards
-- **Brand Footer**: Consistent footer across all pages with brand colors and information
-- **Card-Based Layouts**: Modern card-based design with rounded corners and shadows
-- **Responsive Design**: Optimized layouts that work well on different screen sizes
-- **Consistent Styling**: Global CSS with Nunito font, brand colors, and consistent spacing
 
 ## API Endpoints
 
@@ -554,8 +403,6 @@ curl "http://127.0.0.1:8000/health"
 }
 ```
 
-This endpoint is used by the frontend System Status page to monitor backend availability. Always returns `200 OK` if the endpoint is reachable.
-
 ### Search Products
 
 Search for products across multiple retailers:
@@ -569,14 +416,11 @@ curl "http://127.0.0.1:8000/search?q=cola&retailers=ah"
 
 # Sort by price and filter healthy products
 curl "http://127.0.0.1:8000/search?q=banana&retailers=ah,jumbo,dirk&sort_by=price&health_filter=healthy"
-
-# Pagination
-curl "http://127.0.0.1:8000/search?q=bread&retailers=ah&size=10&page=1"
 ```
 
 **Query Parameters:**
 - `q` (required): Search query string
-- `retailers` (optional): Comma-separated list of retailers (`ah`, `jumbo`, `picnic`, `dirk`). Default: `picnic,ah,jumbo,dirk`
+- `retailers` (optional): Comma-separated list of retailers (`ah`, `jumbo`, `picnic`, `dirk`). Default: `picnic,ah,jumbo` (dirk is supported when enabled)
 - `size` (optional): Results per retailer (1-50). Default: `10`
 - `page` (optional): Page number (0-indexed). Default: `0`
 - `sort_by` (optional): Sort criterion (`price`, `retailer`, `health`). Default: `price`
@@ -618,8 +462,6 @@ curl "http://127.0.0.1:8000/basket/savings" \
   -H "X-Session-ID: user123"
 ```
 
-Returns potential savings and suggestions for cheaper alternatives.
-
 ### Saved Baskets/Templates
 
 **List saved templates:**
@@ -636,26 +478,6 @@ curl -X POST "http://127.0.0.1:8000/api/basket/templates" \
   -d '{"name": "Weekly groceries"}'
 ```
 
-**Apply a template:**
-```bash
-curl -X POST "http://127.0.0.1:8000/api/basket/templates/{template_id}/apply" \
-  -H "X-Session-ID: user123"
-```
-
-**Delete a template:**
-```bash
-curl -X DELETE "http://127.0.0.1:8000/api/basket/templates/{template_id}" \
-  -H "X-Session-ID: user123"
-```
-
-### Delivery Slots
-
-Get available delivery slots for a retailer:
-
-```bash
-curl "http://127.0.0.1:8000/delivery/slots?retailer=picnic"
-```
-
 ### Analytics Endpoints
 
 **Get recent events:**
@@ -663,65 +485,75 @@ curl "http://127.0.0.1:8000/delivery/slots?retailer=picnic"
 curl "http://127.0.0.1:8000/analytics/events/recent?limit=100"
 ```
 
-**Response:**
-```json
-{
-  "db_enabled": true,
-  "events": [
-    {
-      "ts": "2024-01-15T10:30:00.123456",
-      "event_type": "search_performed",
-      "session_id": "abc123",
-      "payload": {
-        "query": "melk",
-        "retailers": ["ah", "jumbo"],
-        "result_count": 10
-      }
-    }
-  ]
-}
-```
-
 **Get event type counts:**
 ```bash
 curl "http://127.0.0.1:8000/analytics/events/counts?since_hours=24"
 ```
 
-**Response:**
-```json
-{
-  "db_enabled": true,
-  "since_hours": 24,
-  "counts": {
-    "search_performed": 120,
-    "cart_item_added": 40,
-    "cart_item_removed": 5,
-    "swap_clicked": 3,
-    "recipe_viewed": 8
-  }
-}
-```
-
 **Query Parameters:**
-- `/analytics/events/recent`:
-  - `limit` (optional): Maximum number of events to return (1-1000). Default: `100`
-- `/analytics/events/counts`:
-  - `since_hours` (optional): Number of hours to look back (1-168). Default: `24`
+- `/analytics/events/recent`: `limit` (optional, 1-1000, default: 100)
+- `/analytics/events/counts`: `since_hours` (optional, 1-168, default: 24)
 
 **Note:** These endpoints always return a valid response, even when the database is disabled. The `db_enabled` field indicates whether database persistence is active.
 
+For complete API documentation, visit `http://localhost:8000/docs` when the backend is running.
+
 ## Production Deployment
 
-For production/staging, the backend is deployed on Render using `render.yaml`. 
+> 📖 **Detailed deployment instructions**: See [`DEPLOYMENT_RUNBOOK.md`](DEPLOYMENT_RUNBOOK.md) for step-by-step deployment guide.
 
-**Environment Variables on Render:**
-- Set all required environment variables in the Render dashboard (APIFY_TOKEN, PICNIC_USERNAME, PICNIC_PASSWORD, etc.)
-- For the Streamlit frontend service, set `BACKEND_URL` to your backend service URL (e.g., `https://nl-grocery-aggregator.onrender.com`)
-  - This allows the frontend to connect to the backend API and use the `/health` endpoint for status checks
-  - Trailing slashes are automatically removed, so both formats work
-- The `.env` file is **not** used on Render; platform environment variables are used instead.
+The backend and Streamlit UI are deployed on Render using `render.yaml`. The mobile UI is deployed as a separate static site.
 
-See the [Deployment](#deployment) section below for detailed Render setup instructions.
+### Quick Reference: Environment Variables
+
+#### Backend Service (Required)
+- `APIFY_TOKEN` - Apify API token for scraping
+- `PICNIC_USERNAME` - Picnic account email
+- `PICNIC_PASSWORD` - Picnic account password
+- `CORS_ALLOWED_ORIGINS` - Comma-separated frontend URLs (e.g., `https://frontend.onrender.com,https://mobile-ui.onrender.com`)
+
+#### Backend Service (Optional)
+- `DATABASE_URL` - Postgres connection string (for analytics persistence)
+
+#### Streamlit Service (Required)
+- `BACKEND_URL` - Backend API URL (e.g., `https://nl-grocery-aggregator.onrender.com`)
+
+#### Mobile UI Static Site (Required, Build-time)
+- `VITE_API_BASE_URL` - Backend API URL (e.g., `https://nl-grocery-aggregator.onrender.com`)
+
+**CORS Configuration:**
+- Backend reads `CORS_ALLOWED_ORIGINS` (or `CORS_ORIGINS` for backward compatibility)
+- If not set, defaults to local development origins (`localhost:3000`, `localhost:5173`, etc.)
+- **For production**: Set `CORS_ALLOWED_ORIGINS` to your actual frontend URLs (comma-separated, no trailing slashes)
+- Backend logs allowed origins on startup (check logs after deployment)
+
+**Important**: 
+- Set all secrets in Render dashboard (never commit actual values to `render.yaml`)
+- After deploying mobile UI, update backend `CORS_ALLOWED_ORIGINS` to include the mobile UI URL
+- `.env` file is **not** used on Render; platform environment variables are used instead
+
+For complete deployment instructions, troubleshooting, and verification steps, see [`DEPLOYMENT_RUNBOOK.md`](DEPLOYMENT_RUNBOOK.md).
+
+### Render Configuration
+
+A `render.yaml` file is included in the repository root for easy deployment. It contains the service configuration and placeholder environment variables. When deploying:
+
+1. Connect your repository to Render
+2. Render will automatically detect the `render.yaml` file
+3. Set the required environment variables in the Render dashboard (mark secrets as `sync: false`)
+4. Deploy!
+
+### Build and Start Commands
+
+**Backend Build Command:**
+```bash
+pip install -r requirements.txt
+```
+
+**Backend Start Command:**
+```bash
+uvicorn api.main:app --host 0.0.0.0 --port 10000
+```
 
 ## Running Tests
 
@@ -742,93 +574,6 @@ Run specific test file:
 ```bash
 pytest tests/test_search.py
 ```
-
-## Deployment
-
-This app is designed to be deployed on Render as a Python Web Service.
-
-### Build and Start Commands
-
-**Build Command:**
-```bash
-pip install -r requirements.txt
-```
-
-**Start Command:**
-```bash
-uvicorn api.main:app --host 0.0.0.0 --port 10000
-```
-
-Note: The backend service uses port 10000 as configured in `render.yaml`. Render will automatically route traffic to this port.
-
-### Required Environment Variables
-
-The following environment variables must be configured in your Render service settings:
-
-**Apify Configuration** (required for AH, Jumbo, and Dirk connectors):
-- `APIFY_TOKEN` - Apify API token (required)
-- `APIFY_AH_ACTOR_ID` - Apify actor ID for Albert Heijn (default: `harvestedge/my-actor`)
-- `APIFY_JUMBO_ACTOR_ID` - Apify actor ID for Jumbo (default: `harvestedge/jumbo-supermarket-scraper`)
-- `APIFY_DIRK_ACTOR_ID` - Apify actor ID for Dirk (default: `harvestedge/dirk-supermarket-scraper`)
-
-**Picnic Configuration** (required for Picnic connector):
-- `PICNIC_USERNAME` - Picnic account email/username (required)
-- `PICNIC_PASSWORD` - Picnic account password (required)
-- `PICNIC_COUNTRY_CODE` - Picnic country code (default: `NL`)
-
-**Python Version:**
-- `PYTHON_VERSION` - Python version (default: `3.10.19`)
-
-### Render Configuration
-
-A `render.yaml` file is included in the repository root for easy deployment. It contains the service configuration and placeholder environment variables. When deploying:
-
-1. Connect your repository to Render
-2. Render will automatically detect the `render.yaml` file
-3. Set the required environment variables in the Render dashboard (mark secrets as `sync: false`)
-4. Deploy!
-
-### Local Testing
-
-Before deploying, verify the production start command works locally:
-
-```bash
-uvicorn api.main:app --host 0.0.0.0 --port 10000
-```
-
-The API should be accessible at `http://localhost:10000`.
-
-## Development
-
-### Sandbox Scripts
-
-Test individual connectors manually:
-
-```bash
-# Test Picnic connector
-python -m sandbox.sandbox_picnic
-
-# Test AH connector
-python -m sandbox.sandbox_ah_connector
-
-# Test Jumbo connector
-python -m sandbox.sandbox_jumbo
-
-# Test Dirk connector (if sandbox script exists)
-# python -m sandbox.sandbox_dirk
-
-# Test aggregated search
-python -m sandbox.sandbox_search
-```
-
-### Code Quality
-
-The project follows these conventions:
-- Type hints on all functions
-- Pydantic models for data validation
-- Comprehensive docstrings
-- Error handling with clear messages
-- Test coverage for core functionality
 
 ## Architecture Notes
 
@@ -869,19 +614,7 @@ Each retailer has a dedicated connector that:
 
 All hero images and recipe images used in this project are sourced from [Unsplash](https://unsplash.com/) and are provided under the [Unsplash License](https://unsplash.com/license), which allows free use for commercial and non-commercial purposes.
 
-The following photographers' work is featured in the `streamlit_app/assets/` directory:
-- [Anh Nguyen](https://unsplash.com/@pwign)
-- [Anna Pelzer](https://unsplash.com/@annapelzer)
-- [Brooke Lark](https://unsplash.com/@brookelark)
-- [Dan Gold](https://unsplash.com/@danielcgold)
-- [Davey Gravy](https://unsplash.com/@daveygravy)
-- [Ella Olsson](https://unsplash.com/@ellaolsson)
-- [Jannis Brandt](https://unsplash.com/@jannisbrandt)
-- [Nadine Primeau](https://unsplash.com/@nadineprimeau)
-- [Olena Bohovyk](https://unsplash.com/@olenkasanka)
-- [Taylor Kiser](https://unsplash.com/@taypaigey)
-
-We are grateful to these photographers and the Unsplash community for providing high-quality, freely usable images that enhance the visual appeal of this application.
+We are grateful to the Unsplash community for providing high-quality, freely usable images that enhance the visual appeal of this application.
 
 ## License
 

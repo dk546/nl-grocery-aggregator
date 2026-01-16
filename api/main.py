@@ -23,10 +23,15 @@ Access API documentation at:
 # This ensures local development uses .env file, while Render uses platform env vars
 import api.config  # noqa: F401
 
+import os
 import time
+import logging
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, Header, Query, HTTPException, status
+from fastapi import FastAPI, Header, Query, HTTPException, status, Body
+from fastapi.middleware.cors import CORSMiddleware
+
+logger = logging.getLogger(__name__)
 
 from aggregator.search import aggregated_search
 from aggregator.cart import get_cart, add_to_cart, remove_from_cart, replace_cart
@@ -45,6 +50,7 @@ from aggregator.events import (
     log_cart_cleared,
     log_swap_clicked,
     log_recipe_viewed,
+    log_checkout_mock_started,
 )
 from aggregator.connectors.ah_connector import AHConnector
 from api.routers import analytics
@@ -94,6 +100,34 @@ app = FastAPI(
     ],
 )
 
+# Configure CORS middleware
+# Milestone 4: Production deployment - env-based CORS configuration
+# Reads allowed origins from CORS_ALLOWED_ORIGINS env var (comma-separated)
+# If not set in production, defaults to common local development ports
+_cors_origins_env = os.getenv("CORS_ALLOWED_ORIGINS") or os.getenv("CORS_ORIGINS")  # Support both for backward compat
+if _cors_origins_env:
+    # Parse comma-separated origins from environment variable
+    cors_origins = [origin.strip() for origin in _cors_origins_env.split(",") if origin.strip()]
+else:
+    # Default origins for local development (Vite default ports)
+    cors_origins = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Log CORS configuration on startup (Milestone 4: Production deployment)
+logger.info(f"CORS allowed origins: {cors_origins}")
+
 # Valid retailer identifiers
 VALID_RETAILERS = {"ah", "jumbo", "picnic", "dirk"}
 
@@ -106,8 +140,6 @@ try:
             init_db()
         except Exception as e:
             # Log error but don't crash the app - fallback to in-memory/file storage
-            import logging
-            logger = logging.getLogger(__name__)
             logger.warning(f"Database initialization failed, using fallback storage: {e}")
 except ImportError:
     # SQLAlchemy not installed - that's fine, we'll use fallback storage
@@ -504,6 +536,47 @@ def remove_item(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error removing item from cart: {str(e)}"
         ) from e
+
+
+@app.post(
+    "/analytics/events/log",
+    tags=["analytics"],
+    summary="Log an analytics event",
+    description="Log a custom analytics event. Non-blocking and privacy-conscious.",
+)
+def log_analytics_event(
+    event_type: str = Query(..., description="Event type identifier"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-ID", description="Session identifier"),
+    payload: Optional[Dict[str, Any]] = Body(None, description="Optional event payload"),
+) -> Dict[str, str]:
+    """
+    Log an analytics event from the frontend.
+    
+    This endpoint allows the frontend to log custom events like checkout_intent.
+    Events are logged non-blocking and never raise exceptions.
+    
+    Args:
+        event_type: Type of event (e.g., "checkout_intent") - query parameter
+        x_session_id: Session ID from X-Session-ID header
+        body: Optional event payload (JSON body)
+        
+    Returns:
+        Success message
+        
+    Example:
+        POST /analytics/events/log?event_type=checkout_intent
+        Header: X-Session-ID: user123
+        Body: {"item_count": 5, "total_value": 25.50}
+    """
+    session = get_session(x_session_id)
+    
+    # Non-blocking event logging - never raise exceptions
+    try:
+        log_event(event_type, session, payload or {})
+    except Exception:
+        pass  # Swallow all errors - analytics must never block
+    
+    return {"status": "logged"}
 
 
 @app.get(
@@ -1067,7 +1140,7 @@ def price_history(retailer: str, product_id: str, limit: int = Query(30, ge=1, l
     response_model=CartView,
     tags=["cart"],
     summary="Apply a smart swap suggestion",
-    description="Replace a cart item with a suggested alternative (cheaper/healthier). This is a placeholder endpoint for MVP.",
+    description="Replace a cart item with a suggested alternative (cheaper/healthier). Removes the from_item and adds the to_item to the cart.",
 )
 def apply_swap(
     from_item_id: str = Query(..., description="Product ID of item to replace"),
@@ -1080,11 +1153,12 @@ def apply_swap(
     """
     Apply a smart swap suggestion by replacing one cart item with another.
     
-    This is a placeholder/MVP endpoint. Currently, it logs the swap event but
-    does not actually modify the cart. Full implementation would:
-    1. Remove the from_item from cart
-    2. Add the to_item to cart
-    3. Return updated cart view
+    This endpoint:
+    1. Finds the from_item in the cart
+    2. Removes the from_item from cart (all quantity)
+    3. Searches for the to_item product details
+    4. Adds the to_item to cart (same quantity as from_item)
+    5. Returns updated cart view
     
     Args:
         from_item_id: Product ID of the item to replace
@@ -1103,20 +1177,92 @@ def apply_swap(
     """
     session = get_session(x_session_id)
     
-    # Log swap clicked event (non-blocking, already handled in log_swap_clicked)
-    log_swap_clicked(
-        session_id=session,
-        from_item_id=from_item_id,
-        to_item_id=to_item_id,
-        retailer=retailer,
-        savings_amount=savings,
-        health_delta=health_delta,
-    )
+    session = get_session(x_session_id)
     
-    # MVP: Just return current cart without actually swapping
-    # TODO: Implement actual swap logic (remove from_item, add to_item)
     try:
+        # Get current cart to find the from_item
         cart = get_cart(session)
+        
+        # Find the from_item in the cart
+        from_item = None
+        for item in cart.items.values():
+            if item.product_id == from_item_id and (retailer is None or item.retailer == retailer.lower()):
+                from_item = item
+                break
+        
+        if from_item is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Item with product_id '{from_item_id}' not found in cart"
+            )
+        
+        # Step 1: Remove the from_item from cart (remove all quantity)
+        cart = remove_from_cart(session, from_item.retailer, from_item.product_id, from_item.quantity)
+        
+        # Step 2: Add the to_item to cart
+        # We need to construct CartItemInput for the alternative product
+        # Since we only have to_item_id, we'll need to search for the product details
+        # For now, we'll use the retailer parameter or default to from_item's retailer
+        to_retailer = retailer.lower() if retailer else from_item.retailer
+        
+        # Search for the to_item product to get full details
+        from aggregator.search import aggregated_search
+        search_results = aggregated_search(
+            query=from_item.name,  # Use similar name to find alternative
+            retailer_codes=[to_retailer],
+            size=50,
+        )
+        
+        # Find the exact to_item in search results
+        to_product = None
+        for product in search_results:
+            if str(product.get("product_id")) == str(to_item_id):
+                to_product = product
+                break
+        
+        if to_product is None:
+            # If we can't find the product, use minimal data from parameters
+            # This is a fallback - ideally the frontend should provide full product data
+            to_product = {
+                "product_id": to_item_id,
+                "name": from_item.name,  # Fallback to from_item name
+                "price_eur": from_item.price_eur - (savings or 0) / from_item.quantity if savings else from_item.price_eur,
+                "retailer": to_retailer,
+                "image_url": from_item.image_url,
+                "health_tag": from_item.health_tag,
+            }
+        
+        # Create CartItemInput for the to_item
+        cart_item_input = CartItemInput(
+            retailer=to_product.get("retailer", to_retailer),
+            product_id=str(to_product.get("product_id", to_item_id)),
+            name=to_product.get("name", from_item.name),
+            price_eur=float(to_product.get("price_eur", from_item.price_eur)),
+            quantity=from_item.quantity,  # Use same quantity as from_item
+            image_url=to_product.get("image_url", from_item.image_url),
+            health_tag=to_product.get("health_tag", from_item.health_tag),
+        )
+        
+        # Add the to_item to cart
+        cart = add_to_cart(session, CartItem(
+            retailer=cart_item_input.retailer.lower(),
+            product_id=cart_item_input.product_id,
+            name=cart_item_input.name,
+            price_eur=cart_item_input.price_eur,
+            quantity=cart_item_input.quantity,
+            image_url=cart_item_input.image_url,
+            health_tag=cart_item_input.health_tag,
+        ).model_dump())
+        
+        # Log swap clicked event (non-blocking, already handled in log_swap_clicked)
+        log_swap_clicked(
+            session_id=session,
+            from_item_id=from_item_id,
+            to_item_id=to_item_id,
+            retailer=to_retailer,
+            savings_amount=savings,
+            health_delta=health_delta,
+        )
         
         # Convert Cart to CartView format
         items_out = [

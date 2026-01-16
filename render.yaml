@@ -13,20 +13,30 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: "3.10.0"
-      # Apify Configuration (required for AH and Jumbo)
+      # Apify Configuration (REQUIRED: Set actual values in Render dashboard)
+      # These are placeholders - you must set real values in Render environment variables
       - key: APIFY_TOKEN
-        value: ""
+        value: "REPLACE_WITH_ACTUAL_APIFY_TOKEN"
       - key: APIFY_AH_ACTOR_ID
         value: "harvestedge/my-actor"
       - key: APIFY_JUMBO_ACTOR_ID
         value: "harvestedge/jumbo-supermarket-scraper"
-      # Picnic Configuration (required for Picnic)
+      # Picnic Configuration (REQUIRED: Set actual values in Render dashboard)
+      # These are placeholders - you must set real values in Render environment variables
       - key: PICNIC_USERNAME
-        value: ""
+        value: "REPLACE_WITH_ACTUAL_PICNIC_USERNAME"
       - key: PICNIC_PASSWORD
-        value: ""
+        value: "REPLACE_WITH_ACTUAL_PICNIC_PASSWORD"
       - key: PICNIC_COUNTRY_CODE
         value: "NL"
+      # CORS Configuration (REQUIRED for production: Set actual frontend URL in Render dashboard)
+      # Comma-separated list of allowed origins, e.g., "https://your-app.onrender.com,https://mobile-ui.onrender.com"
+      - key: CORS_ALLOWED_ORIGINS
+        value: "REPLACE_WITH_ACTUAL_FRONTEND_URLS"
+      # Optional: Database for analytics persistence
+      # Set DATABASE_URL in Render dashboard if you want analytics event persistence
+      # - key: DATABASE_URL
+      #   value: ""  # Leave empty or set to your Postgres database URL
 
   # Frontend UI Service (Streamlit)
   - type: web

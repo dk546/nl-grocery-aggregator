@@ -27,12 +27,14 @@ Thumbs.db
 # Local config & secrets
 .env
 *.local.json
+.env.local
 
 # Streamlit secrets (keep config, ignore secrets)
 .streamlit/secrets.toml
 
 # Cursor / AI tooling
 .cursor/
+PROJECT_PLAN.md
 
 # Type checking / linters / caches
 .mypy_cache/
