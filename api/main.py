@@ -110,11 +110,14 @@ if _cors_origins_env:
     cors_origins = [origin.strip() for origin in _cors_origins_env.split(",") if origin.strip()]
 else:
     # Default origins for local development (Vite default ports)
+    # Includes common ports: 3000 (Create React App), 5173 (Vite default), 8080 (alternative Vite port)
     cors_origins = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        "http://localhost:8080",
+        "http://127.0.0.1:8080",
     ]
 
 app.add_middleware(
